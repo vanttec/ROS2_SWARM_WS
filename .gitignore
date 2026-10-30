@@ -11,3 +11,17 @@ __pycache__/
 *~HEAD
 *.orig
 *.rej
+
+# ArduPilot SITL / MAVProxy runtime output.
+# sim_vehicle.py and mavproxy write into whatever directory they were launched from, which has
+# been the repo root. All of it regenerates on every run; mav.tlog alone is ~650 kB.
+eeprom.bin
+eeprom.bin.bak
+mav.parm
+mav.tlog
+mav.tlog.raw
+logs/
+terrain/
+
+# Gazebo
+.gz/
