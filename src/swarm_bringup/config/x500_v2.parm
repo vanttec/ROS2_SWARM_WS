@@ -1,0 +1,34 @@
+# Holybro X500 V2 on ArduCopter, for SITL against the gazebo/worlds/x500_swarm.sdf model.
+#
+# Pass with sim_vehicle.py --add-param-file. Everything not listed here stays at the
+# ArduCopter default, which is tuned for roughly this class of airframe (2 kg, 500 mm, 10 in
+# props), so the list is deliberately short.
+
+# Quad in X
+FRAME_CLASS     1
+FRAME_TYPE      1
+
+# The model makes 43 N at full throttle against 19.8 N of weight, so it hovers near 45%.
+# MOT_HOVER_LEARN 2 lets the autopilot refine this in flight and save it, exactly as it does
+# on the real aircraft.
+MOT_THST_HOVER  0.45
+MOT_HOVER_LEARN 2
+MOT_THST_EXPO   0.65
+
+# Lift in the model is quadratic in rotor speed and rotor speed is linear in servo output,
+# so the usable band starts where the props bite rather than at MOT_SPIN_ARM.
+MOT_SPIN_ARM    0.10
+MOT_SPIN_MIN    0.15
+
+# Keep the swarm slow: these are the same limits command_bridge clamps to, so a scripted
+# Twist sequence behaves the same in SITL and outdoors.
+WPNAV_SPEED     500
+WPNAV_SPEED_UP  150
+WPNAV_SPEED_DN  100
+PILOT_SPEED_UP  150
+
+# -f gazebo-iris also loads gazebo-iris.parm, which switches on IRLock and a simulated analog
+# rangefinder the X500 does not carry. Turn them back off so SITL matches the real aircraft.
+PLND_ENABLED    0
+RNGFND1_TYPE    0
+RC8_OPTION      0

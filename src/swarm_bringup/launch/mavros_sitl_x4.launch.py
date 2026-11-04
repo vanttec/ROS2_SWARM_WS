@@ -3,10 +3,21 @@
 Mirrors mavros_x4.launch.py, but points at localhost SITL rather than the ESP8266 bridges, and uses
 the sysids SITL assigns with --auto-sysid (1-4) rather than the aircraft's own (19/17/32/31).
 
-Start SITL first, on the host:
+Start Gazebo with the four X500 V2 copters, in the container:
+
+    cd src/swarm_bringup/gazebo
+    export GZ_SIM_SYSTEM_PLUGIN_PATH=$HOME/gz_ws/src/ardupilot_gazebo/build
+    export GZ_SIM_RESOURCE_PATH=$PWD/models
+    gz sim -r worlds/x500_swarm.sdf
+
+Then SITL, on the host:
 
     ./Tools/autotest/sim_vehicle.py -v ArduCopter -f gazebo-iris --model JSON \\
-        --count 4 --auto-sysid --auto-offset-line 90,10 -L CMAC --no-mavproxy
+        --count 4 --auto-sysid --auto-offset-line 90,10 -L CMAC --no-mavproxy \\
+        --add-param-file=$HOME/Documents/VANTTEC/ROS2_SWARM_WS/src/swarm_bringup/config/x500_v2.parm
+
+Nothing moves until all four MAVROS instances are up: the plugin is lock-stepped and a SITL
+instance does not step until a GCS attaches to its MAVLink port. See README.md.
 
 Then here:
 
@@ -34,6 +45,8 @@ DRONES = [  # (namespace, sysid, sitl_tcp_port, mavproxy_udp_port)
 
 def launch_setup(context, *args, **kwargs):
     use_mavproxy = LaunchConfiguration('use_mavproxy').perform(context) == 'true'
+    num_drones = int(LaunchConfiguration('num_drones').perform(context))
+    drones = DRONES[:num_drones]
 
     node_launch = PathJoinSubstitution([FindPackageShare('mavros'), 'launch', 'node.launch'])
     apm_config = PathJoinSubstitution([FindPackageShare('mavros'), 'launch', 'apm_config.yaml'])
@@ -53,12 +66,12 @@ def launch_setup(context, *args, **kwargs):
                 'config_yaml': apm_config,
                 'namespace': ns,
             }.items())
-        for ns, sysid, tcp_port, udp_port in DRONES]
+        for ns, sysid, tcp_port, udp_port in drones]
 
     streams = Node(
         package='swarm_nodes', executable='stream_setup', name='stream_setup',
         output='screen',
-        parameters=[{'namespaces': [d[0] for d in DRONES], 'rate_hz': 25.0}])
+        parameters=[{'namespaces': [d[0] for d in drones], 'rate_hz': 25.0}])
 
     return mavros + [streams]
 
@@ -69,5 +82,9 @@ def generate_launch_description():
             'use_mavproxy', default_value='false',
             description='true if SITL runs with MAVProxy forwarding to UDP 14551-14554; '
                         'false to connect straight to SITL TCP 5760-5790'),
+        DeclareLaunchArgument(
+            'num_drones', default_value='4',
+            description='how many SITL instances to connect to; use 1 for the single-vehicle '
+                        'Gazebo smoke test before going to four'),
         OpaqueFunction(function=launch_setup),
     ])
