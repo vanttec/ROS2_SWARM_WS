@@ -1,6 +1,12 @@
 """Request MAVLink message rates from every drone, and re-request them after a reboot.
 
-MAVLink ids: 30 ATTITUDE, 31 ATTITUDE_QUATERNION, 32 LOCAL_POSITION_NED, 33 GLOBAL_POSITION_INT
+MAVLink ids: 24 GPS_RAW_INT, 30 ATTITUDE, 31 ATTITUDE_QUATERNION, 32 LOCAL_POSITION_NED,
+33 GLOBAL_POSITION_INT.
+
+24 is the one that is easy to forget and expensive to miss: it carries the GPS FIX TYPE. Without
+it MAVROS publishes positions with status -1 forever, /droneN/mavros/gpsstatus/gps1/raw stays
+empty, and there is no way to tell RTK Fixed from plain 3D -- which is the single check the RTK
+setup depends on. It is only 1-2 Hz worth of traffic.
 """
 import rclpy
 from rclpy.node import Node
@@ -14,8 +20,8 @@ class StreamSetup(Node):
         super().__init__('stream_setup')
         self.drone_ns = self.declare_parameter(
             'namespaces', ['drone1', 'drone2', 'drone3', 'drone4']).value
-        self.message_ids = self.declare_parameter('message_ids', [30, 31, 32, 33]).value
-        self.rate_hz = self.declare_parameter('rate_hz', 25.0).value
+        self.message_ids = self.declare_parameter('message_ids', [24, 30, 31, 32, 33]).value
+        self.rate_hz = self.declare_parameter('rate_hz', 50.0).value
         reapply_period = self.declare_parameter('reapply_period', 30.0).value
 
         self.connected = {ns: False for ns in self.drone_ns}
