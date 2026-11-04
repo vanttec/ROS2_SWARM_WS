@@ -16,3 +16,4 @@
       - param
       - gps_rtk
       - gps_status
+      - wifi_status
