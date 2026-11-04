@@ -122,7 +122,7 @@ def geodetic_to_enu(lat_deg, lon_deg, alt, lat0_deg, lon0_deg, alt0):
         0.001 degrees of latitude  = 110.79 m north
         0.001 degrees of longitude = 100.42 m east
         1e-7 degrees, the resolution of the GPS MAVLink message = about 1.1 cm
-
+droneN
     Checked against GeographicLib's CartConvert, the library MAVROS itself links against: they
     agree to 3 nanometres.
     """
@@ -219,21 +219,32 @@ class OdomRelay(Node):
                 f'those drones publish nothing until they settle')
 
     def on_fix(self, ns, msg):
-        # status < 0 is NavSatStatus.STATUS_NO_FIX. Checking only isfinite() is NOT enough:
-        # with no satellite lock MAVROS publishes latitude = longitude = 0.0, which is perfectly
-        # finite and would be accepted as a real position off the coast of Africa. Every offset
-        # computed from it would be garbage, and nothing downstream would look wrong.
-        if msg.status.status < 0:
-            self.get_logger().warn(f'{ns}: GPS reports no fix, ignoring position',
+        # Two different bad readings have to be rejected here.
+        #
+        # isfinite() alone is NOT enough: with no satellite lock MAVROS publishes
+        # latitude = longitude = 0.0, which is perfectly finite and would be taken as a real
+        # position off the coast of Africa -- every offset computed from it would be garbage and
+        # nothing downstream would look wrong.
+        #
+        # But status.status is NOT a reliable gate either. It comes from MAVLink GPS_RAW_INT (24),
+        # and if that message is not being streamed MAVROS leaves it at -1 forever even while the
+        # EKF is happily using GPS and publishing real coordinates. Gating on it blocks everything.
+        # stream_setup now requests 24 so the field is populated, but we do not depend on it.
+        if not (math.isfinite(msg.latitude) and math.isfinite(msg.longitude)):
+            self.get_logger().warn(f'{ns}: GPS position is not a number, ignoring',
                                    throttle_duration_sec=15.0)
             return
-        if math.isfinite(msg.latitude) and math.isfinite(msg.longitude):
-            self.fix[ns] = (msg.latitude, msg.longitude, msg.altitude)
-            if self.origin is None and ns == self.reference:
-                self.origin = self.fix[ns]
-                self.get_logger().info(
-                    f'swarm_origin adopted from {ns}: '
-                    f'{self.origin[0]:.7f}, {self.origin[1]:.7f}, {self.origin[2]:.2f} m')
+        if abs(msg.latitude) < 1e-9 and abs(msg.longitude) < 1e-9:
+            self.get_logger().warn(
+                f'{ns}: GPS reports (0, 0) -- no fix, ignoring position',
+                throttle_duration_sec=15.0)
+            return
+        self.fix[ns] = (msg.latitude, msg.longitude, msg.altitude)
+        if self.origin is None and ns == self.reference:
+            self.origin = self.fix[ns]
+            self.get_logger().info(
+                f'swarm_origin adopted from {ns}: '
+                f'{self.origin[0]:.7f}, {self.origin[1]:.7f}, {self.origin[2]:.2f} m')
 
     def on_odom(self, ns, msg):
         if not self.seen[ns]:
