@@ -14,6 +14,10 @@ setup(
         ('share/' + package_name, ['package.xml']),
    (os.path.join('share', package_name, 'launch'), glob('launch/*.launch.py')),
    (os.path.join('share', package_name, 'config'), glob('config/*.yaml')),
+   (os.path.join('share', package_name, 'config'), glob('config/*.parm')),
+   (os.path.join('share', package_name, 'gazebo', 'worlds'), glob('gazebo/worlds/*.sdf')),
+   (os.path.join('share', package_name, 'gazebo', 'models', 'x500_v2'),
+    glob('gazebo/models/x500_v2/*')),
 
     ],
     install_requires=['setuptools'],
