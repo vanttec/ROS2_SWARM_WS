@@ -32,6 +32,14 @@ setup(
             'stream_setup = swarm_nodes.stream_setup:main',
             'odom_relay = swarm_nodes.odom_relay:main',
             'teleop_velocity = swarm_nodes.teleop_velocity:main',
+<<<<<<< Updated upstream
+=======
+            'command_bridge = swarm_nodes.command_bridge:main',
+            'sequence_player = swarm_nodes.sequence_player:main',
+            'dashboard = swarm_nodes.dashboard:main',
+            'rtcm_relay = swarm_nodes.rtcm_relay:main',
+            'nodo_mochila = swarm_nodes.nodo_mochila:main',
+>>>>>>> Stashed changes
         ],
     },
 )
