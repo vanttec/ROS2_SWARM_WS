@@ -18,21 +18,24 @@ source ~/Documents/VANTTEC/ROS2_SWARM_WS/install/setup.bash
 
 ## Terminal layout
 
-Nine terminals. Label them — in the field you will be reaching for the right one under pressure.
+Nine terminals, plus **T0** on a test that includes the leader. Label them — in the field you
+will be reaching for the right one under pressure.
 
 | # | Runs | Stays open | Purpose |
 | --- | --- | --- | --- |
+| **T0** | `mochila.launch.py` | all day, leader tests only | the backpack's MAVROS + `stream_setup_mochila` + `nodo_mochila` |
 | **T1** | `mavros_x4.launch.py` | all day | the four links + `stream_setup` |
-| **T2** | `rtcm_relay` | all day | RTK corrections to every drone |
-| **T3** | `odom_relay` | all day | `/droneN/odom` in the shared frame |
+| **T2** | `rtcm_relay` | all day | RTK corrections to every drone — and the backpack, it's in the node's default namespace list |
+| **T3** | `odom_relay` | all day | `/droneN/odom` in the shared frame — `/mochila_rtk/odom` too, same default |
 | **T4** | `command_bridge` | all day | clamp + watchdog. **Nothing moves without it** |
-| **T5** | `dashboard` | all day | the screen you actually watch |
+| **T5** | `dashboard` | all day | the screen you actually watch — the backpack is a monitor-only column, no flight buttons |
 | **T6** | `first_flight` | per flight | arm / takeoff / land. **Ctrl-C here lands** |
 | **T7** | `teleop_velocity` or `sequence_player` | per test | flying it |
-| **T8** | `link_monitor` / `orientation_monitor` | as needed | diagnostics |
+| **T8** | `link_monitor` / `orientation_monitor` | as needed | diagnostics — both already cover the backpack |
 | **T9** | free | — | `ros2 topic echo`, one-off service calls |
 
-T1–T5 start once and are left alone. T6 is the one you reach for in a hurry.
+T0–T5 start once and are left alone. T6 is the one you reach for in a hurry. Skip T0 entirely on
+a drones-only session — nothing else here depends on the leader being present.
 
 ---
 
@@ -316,6 +319,51 @@ for n in 1 2 3 4; do ros2 topic echo /drone$n/mavros/gpsstatus/gps1/raw --once |
 `fix_type: 6` = RTK Fixed. `5` = Float, still converging — give it a minute. `3` = no corrections.
 
 **Go / no-go: all four at fix type 6.** Everything downstream inherits this accuracy.
+
+---
+
+## 2c. The leader (mochila), if this test uses one
+
+The backpack is a Pixhawk + RTK rover carried on foot, not a flying vehicle — there is no arm,
+takeoff or land for it anywhere in this stack. What you are confirming here is the same thing as
+for a drone: the link is up, and corrections have converged to RTK Fixed.
+
+**T0**, if not already running:
+```bash
+ros2 launch swarm_bringup mochila.launch.py
+```
+
+Expect, in order:
+```
+[mavros_node-1] [INFO] [mochila_rtk.mavros]: CON: Got HEARTBEAT, connected. FCU: ArduPilot
+[nodo_mochila-3] [INFO] [nodo_mochila]: Mochila: FCU conectado.
+[nodo_mochila-3] [INFO] [nodo_mochila]: Mochila: primera pose recibida.
+[nodo_mochila-3] [INFO] [nodo_mochila]: Mochila: primer fix GPS recibido.
+```
+
+Then every `report_period` (10 s by default):
+```
+[nodo_mochila-3] [INFO] [nodo_mochila]: Mochila: RTK Fixed, 22 satélites -- RTK OK.
+```
+
+| What you see | Meaning |
+| --- | --- |
+| `FCU no conectado` | check the backpack's USB/telemetry link and that T0 is actually running |
+| `conectada pero sin pose ni GPS todavía` | connected, but MAVROS has not published either yet — give it a moment |
+| `sin GPS_RAW_INT (24) todavía` | `stream_setup_mochila` has not reached it yet, or hasn't requested the rate — check T0's log |
+| `RTK Float` / `3D` (not Fixed) | same as a drone: check **T2** is running and that `mochila_rtk` is in its namespace list (it is, by default) |
+
+**Go / no-go: `RTK OK` from `nodo_mochila`.** Same bar as the drones — no formation test should
+start on a leader that is not RTK Fixed.
+
+Cross-check against the rest of the stack, same data from two other angles:
+
+- **T5 dashboard** — the `MOCHILA` column shows `gps` / `gps acc` directly, and `east` / `north` /
+  `up` once `odom_relay` resolves it into the shared frame (same `/mochila_rtk/odom` as the drones'
+  `/droneN/odom` — directly comparable once both show `swarm_origin`). It has no buttons: the
+  column under it just reads `monitor only`.
+- **T8 `orientation_monitor`** — add `MOCHILA`'s line to the drones' when checking that all
+  headings agree (Compass check, Stage 3).
 
 ---
 
@@ -646,6 +694,11 @@ Everything here has actually happened during development or testing.
   land-on-Ctrl-C path, and anything with four drones at once. Treat each first-on-hardware run as
   a test, not a demonstration.
 - **`/droneN/status`**, the third topic in the RSCL contract, is not implemented.
+- **`/mochila_rtk/pose` and `/mochila_rtk/gps`** (published by `nodo_mochila`) have no subscriber
+  anywhere in this repo yet — the shared-frame position everything downstream actually uses is
+  `/mochila_rtk/odom` from `odom_relay`, exactly like a drone. The two re-published topics exist
+  for whatever the RSCL formation controller ends up wanting from the leader directly; until that
+  controller lands, treat them as unverified.
 
 # The interface handed to RSCL
 

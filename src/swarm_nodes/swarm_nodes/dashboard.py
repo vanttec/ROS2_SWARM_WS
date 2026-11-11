@@ -1,4 +1,5 @@
-"""Ground-station dashboard: all four drones on one screen, with controls.
+"""Ground-station dashboard: the four drones and the RTK backpack leader on one screen, with
+controls for the drones.
 
     ros2 run swarm_nodes dashboard
 
@@ -8,8 +9,11 @@ colour-coded so a problem is visible without reading numbers.
 
 Position comes from /droneN/odom, so once odom_relay has resolved the shared origin these are
 directly comparable -- that is the view that tells you whether a formation is actually holding.
+mochila_rtk gets the same column (odom_relay already shares its frame too) so you can see the
+leader's position against the drones', but it is MONITOR ONLY: it has no motors, so it gets none
+of the flight controls below and is left out of LAND ALL.
 
-Controls, in increasing order of how much they can hurt:
+Controls, in increasing order of how much they can hurt (drones only):
 
     GUIDED / LAND    no confirmation, both are recoveries
     TAKEOFF / ARM    confirmation dialog, they spin propellers
@@ -42,7 +46,8 @@ from PyQt5.QtGui import QFont
 from PyQt5.QtWidgets import (QApplication, QGridLayout, QHBoxLayout, QLabel,
                              QMessageBox, QPushButton, QVBoxLayout, QWidget)
 
-NAMES = {'drone1': 'PAPOI', 'drone2': 'TRINEO', 'drone3': 'BISUU', 'drone4': 'LUCAS'}
+NAMES = {'drone1': 'PAPOI', 'drone2': 'TRINEO', 'drone3': 'BISUU', 'drone4': 'LUCAS',
+         'mochila_rtk': 'MOCHILA'}
 
 OK, WARN, BAD, DIM = '#2e7d32', '#ef6c00', '#c62828', '#757575'
 
@@ -60,9 +65,13 @@ FIX_TYPES = {0: ('no GPS', BAD), 1: ('no fix', BAD), 2: ('2D', BAD), 3: ('3D', W
 class SwarmMonitor(Node):
     """Subscribes to everything the dashboard shows and owns the service clients."""
 
-    def __init__(self, namespaces):
+    def __init__(self, namespaces, controllable_ns=None):
         super().__init__('dashboard')
         self.drone_ns = namespaces
+        # Everything in here gets a column: link, mode, GPS, battery, position. The backpack
+        # (mochila_rtk) is one of these -- it has no motors, so it is not also in controllable_ns
+        # below and never gets GUIDED/ARM/TAKEOFF/LAND buttons.
+        self.controllable_ns = list(controllable_ns) if controllable_ns is not None else list(namespaces)
         # 4S LiPo defaults: 14.0 V is ~3.5 V/cell, 13.2 V is ~3.3 V/cell. Override for 6S.
         self.warn_v = self.declare_parameter('battery_warn_v', 14.0).value
         self.low_v = self.declare_parameter('battery_low_v', 13.2).value
@@ -86,6 +95,10 @@ class SwarmMonitor(Node):
             self.create_subscription(Odometry, f'/{ns}/odom',
                                      lambda m, ns=ns: self.on_odom(ns, m),
                                      qos_profile_sensor_data)
+
+        # cmd_vel and the mode/arm/takeoff/land service clients only make sense for something
+        # command_bridge and first_flight actually fly -- the backpack is never in this set.
+        for ns in self.controllable_ns:
             self.create_subscription(Twist, f'/{ns}/cmd_vel',
                                      lambda m, ns=ns: self.put(ns, 'last_cmd',
                                                                time.monotonic()), 10)
@@ -179,13 +192,21 @@ class Dashboard(QWidget):
         button_row = len(ROWS) + 1
         for col, ns in enumerate(monitor.drone_ns, start=1):
             box = QVBoxLayout()
-            for text, handler in (('GUIDED', lambda _, n=ns: self.monitor.set_mode(n, 'GUIDED')),
-                                  ('ARM', lambda _, n=ns: self.confirm_arm(n)),
-                                  ('TAKEOFF', lambda _, n=ns: self.confirm_takeoff(n)),
-                                  ('LAND', lambda _, n=ns: self.monitor.land(n))):
-                button = QPushButton(text)
-                button.clicked.connect(handler)
-                box.addWidget(button)
+            if ns in monitor.controllable_ns:
+                for text, handler in (
+                        ('GUIDED', lambda _, n=ns: self.monitor.set_mode(n, 'GUIDED')),
+                        ('ARM', lambda _, n=ns: self.confirm_arm(n)),
+                        ('TAKEOFF', lambda _, n=ns: self.confirm_takeoff(n)),
+                        ('LAND', lambda _, n=ns: self.monitor.land(n))):
+                    button = QPushButton(text)
+                    button.clicked.connect(handler)
+                    box.addWidget(button)
+            else:
+                # Monitor-only (the backpack): no motors, so no flight controls to offer.
+                note = QLabel('monitor only')
+                note.setAlignment(Qt.AlignCenter)
+                note.setStyleSheet(f'color: {DIM};')
+                box.addWidget(note)
             holder = QWidget()
             holder.setLayout(box)
             grid.addWidget(holder, button_row, col)
@@ -238,7 +259,8 @@ class Dashboard(QWidget):
 
     def land_all(self):
         # Deliberately no dialog: this is the button you press when something is going wrong.
-        for ns in self.monitor.drone_ns:
+        # Only the flyable namespaces -- there is nothing to "land" on the backpack.
+        for ns in self.monitor.controllable_ns:
             self.monitor.land(ns)
 
     # -- display ---------------------------------------------------------------
@@ -347,9 +369,10 @@ class Dashboard(QWidget):
 
 
 def main():
-    namespaces = ['drone1', 'drone2', 'drone3', 'drone4']
+    controllable_ns = ['drone1', 'drone2', 'drone3', 'drone4']
+    namespaces = controllable_ns + ['mochila_rtk']
     rclpy.init()
-    monitor = SwarmMonitor(namespaces)
+    monitor = SwarmMonitor(namespaces, controllable_ns)
 
     executor = MultiThreadedExecutor()
     executor.add_node(monitor)

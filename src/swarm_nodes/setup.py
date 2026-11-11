@@ -24,6 +24,8 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            'nodo_velocidades = swarm_nodes.nodo_velocidades:main',
+            'nodo_odometria = dron_control.nodo_odometria:main',
             'link_monitor = swarm_nodes.link_monitor:main',
             'first_flight = swarm_nodes.first_flight:main',
             'orientation_monitor = swarm_nodes.orientation_monitor:main',
@@ -34,6 +36,7 @@ setup(
             'sequence_player = swarm_nodes.sequence_player:main',
             'dashboard = swarm_nodes.dashboard:main',
             'rtcm_relay = swarm_nodes.rtcm_relay:main',
+            'nodo_mochila = swarm_nodes.nodo_mochila:main'
         ],
     },
 )

@@ -98,6 +98,7 @@ cd ~/ardupilot
 | `ros2 launch swarm_bringup mavros_sitl_x4.launch.py` | **Simulation.** Same four, pointed at SITL on localhost, sysids 1–4 |
 | `... mavros_sitl_x4.launch.py num_drones:=1` | Connect to one SITL instance — the single-vehicle smoke test |
 | `... mavros_sitl_x4.launch.py use_mavproxy:=true` | Use UDP 14551–14554 instead of TCP 5760–5790, when MAVProxy is running |
+| `ros2 launch swarm_bringup mochila.launch.py` | **The leader.** MAVROS for the RTK backpack over `/dev/ttyUSB0` (sysid 5, namespace `mochila_rtk`), plus `stream_setup_mochila` and `nodo_mochila`. Run alongside `mavros_x4`/`mavros_sitl_x4`, not instead of it |
 | `ros2 launch swarm_bringup <file> --show-args` | List a launch file's arguments without starting it |
 
 ---
@@ -116,8 +117,9 @@ cd ~/ardupilot
 | `./tools/find_rtk_base.py` | **Find the base's serial port and say what it is emitting.** Run this first — it tells you whether the base is already surveyed in (RTCM3 with message 1005) or still needs configuring (UBX/NMEA). Needs no ROS and no built workspace |
 | `ros2 run swarm_nodes rtcm_relay --ros-args -p port:=/dev/ttyACM0` | **Feed RTK corrections** from the base's serial port to all four drones. Without corrections they stay at fix type 3 |
 | `ros2 run swarm_nodes rtcm_relay --ros-args -p udp_port:=13320` | Same, but take corrections over UDP from QGroundControl's *NTRIP/RTK → UDP Forwarding*. Use this when QGC is doing the survey-in, since a serial port has only one owner |
-| `ros2 run swarm_nodes link_monitor` | Per-drone message rate and **max gap** — how you judge the WiFi link |
-| `ros2 run swarm_nodes orientation_monitor` | Roll/pitch/heading for all four, IMU vs compass |
+| `ros2 run swarm_nodes link_monitor` | Per-drone message rate and **max gap** — how you judge the WiFi link. Already includes the backpack |
+| `ros2 run swarm_nodes orientation_monitor` | Roll/pitch/heading for all four, IMU vs compass. Already includes the backpack |
+| `ros2 run swarm_nodes nodo_mochila` | **The leader's adapter.** Reports FCU connection, first pose/GPS, and RTK fix type for the backpack every `report_period` (10 s default); re-publishes its own-frame pose/GPS as `/mochila_rtk/pose` and `/mochila_rtk/gps`. Started by `mochila.launch.py` — the shared-frame position (`/mochila_rtk/odom`) still comes from `odom_relay`, not from here |
 
 Useful parameters:
 
@@ -158,6 +160,8 @@ ros2 run swarm_nodes odom_relay --ros-args -p publish_global_check:=true
 
 ```bash
 ros2 topic echo /drone1/mavros/gpsstatus/gps1/raw --once | grep -E "fix_type|satellites|h_acc"
+# same for the leader:
+ros2 topic echo /mochila_rtk/mavros/gpsstatus/gps1/raw --once | grep -E "fix_type|satellites|h_acc"
 ```
 
 | `fix_type` | Meaning |

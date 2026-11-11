@@ -82,6 +82,7 @@ class CommandBridge(Node):
         self.handed_over = {ns: False for ns in self.drone_ns}  # mode switched, awaiting GUIDED
         self.handover_sent = {ns: False for ns in self.drone_ns}  # request in flight, don't spam
         self.mode = {ns: '' for ns in self.drone_ns}
+        self.was_armed = {ns: False for ns in self.drone_ns}    # armed, as of the last state msg
 
         self.setpoint_pubs = {}
         self.mode_clients = {}
@@ -118,6 +119,23 @@ class CommandBridge(Node):
             self.handed_over[ns] = False
             self.handover_sent[ns] = False
             self.get_logger().info(f'{ns}: back in GUIDED, bridge re-armed')
+
+        # Landing disarms the vehicle, but last_time stays set from the flight that just ended --
+        # nothing above ever clears it. Left alone, stream() in on_cmd()'s read of "last command
+        # was X seconds ago" keeps going, so the bridge carries on publishing to
+        # setpoint_velocity/cmd_vel_unstamped (the stale-zero branch, usually) straight through
+        # the disarmed period and into the NEXT flight's takeoff, fighting it. Disarming is the
+        # one unambiguous "this flight is over" signal, so that is where we wipe the slate: next
+        # time is_connected and GUIDED go through fresh, with nothing left running until this
+        # bridge actually receives a new /ns/cmd_vel.
+        if self.was_armed[ns] and not msg.armed:
+            self.last_cmd[ns] = None
+            self.last_time[ns] = None
+            self.handed_over[ns] = False
+            self.handover_sent[ns] = False
+            self.get_logger().info(f'{ns}: disarmed -- bridge state cleared for the next flight')
+        self.was_armed[ns] = msg.armed
+
         self.mode[ns] = msg.mode
 
     def on_cmd(self, ns, msg):

@@ -72,7 +72,7 @@ class RtcmRelay(Node):
     def __init__(self):
         super().__init__('rtcm_relay')
         self.drone_ns = self.declare_parameter(
-            'namespaces', ['drone1', 'drone2', 'drone3', 'drone4']).value
+        'namespaces', ['drone1', 'drone2', 'drone3', 'drone4', 'mochila_rtk']).value
         self.port_name = self.declare_parameter('port', '/dev/ttyACM0').value
         self.baudrate = self.declare_parameter('baudrate', 115200).value
         # Set udp_port to take corrections from QGroundControl's UDP Forwarding instead of the
