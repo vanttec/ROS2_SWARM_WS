@@ -3,6 +3,10 @@ build/
 install/
 log/
 
+graphify-out/
+.claude/
+CLAUDE.md
+
 # python
 __pycache__/
 *.pyc
