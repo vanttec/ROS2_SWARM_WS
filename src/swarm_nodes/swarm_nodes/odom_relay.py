@@ -144,7 +144,7 @@ class OdomRelay(Node):
     def __init__(self):
         super().__init__('odom_relay')
         self.drone_ns = self.declare_parameter(
-            'namespaces', ['drone1', 'drone2', 'drone3', 'drone4']).value
+            'namespaces', ['drone1', 'drone2', 'drone3', 'drone4','mochila_rtk']).value
         # True  -> shift every drone into one shared frame (what the formation controller needs)
         # False -> pass poses through untouched, each in its own drone's frame
         self.shared_origin = self.declare_parameter('shared_origin', True).value
