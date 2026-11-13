@@ -1,0 +1,82 @@
+{
+  "$schema": "https://aka.ms/codetour-schema",
+  "title": "SWARM Ground Station — New Joiner",
+  "description": "How four Holybro X500 V2 quadcopters get RTK-grade pose into ROS 2 and take velocity commands back. Follow this before touching anything that flies.",
+  "steps": [
+    {
+      "directory": "src/swarm_nodes/swarm_nodes",
+      "title": "The whole stack lives here",
+      "description": "Ten ROS 2 nodes, each one `ros2 run swarm_nodes <name>`. They split into three jobs:\n\n- **Pose out**: `stream_setup`, `odom_relay`, `rtcm_relay`\n- **Commands in**: `command_bridge`, `teleop_velocity`, `sequence_player`, `first_flight`\n- **Watching**: `dashboard`, `link_monitor`, `orientation_monitor`\n\nThis is an `ament_python` package, so every node is registered as a console script in `setup.py` — a missing comma there silently destroys an entry point, which has already bitten this repo once.\n\n**Gotcha:** the sibling `build/` and `install/` directories are colcon artifacts, not source. Ignore them."
+    },
+    {
+      "file": "README.md",
+      "selection": { "start": { "line": 23, "character": 0 }, "end": { "line": 29, "character": 0 } },
+      "title": "The contract — what RSCL actually sees",
+      "description": "This workspace is the outdoor replacement for the MOCAP room. RSCL owns the formation controller; we own everything underneath it.\n\nThe interface is deliberately tiny:\n\n- `/droneN/odom` (`nav_msgs/Odometry`) — us → them, 25 Hz, `frame_id: swarm_origin`\n- `/droneN/cmd_vel` (`geometry_msgs/Twist`) — them → us, world ENU, clamped\n\n**Why it matters:** their controller should never need to know MAVROS exists. Every MAVLink detail is supposed to die inside these ten nodes. If RSCL has to subscribe to something MAVROS-shaped, that's a gap in this stack, not theirs."
+    },
+    {
+      "file": "src/swarm_nodes/swarm_nodes/stream_setup.py",
+      "line": 23,
+      "title": "First thing you run — ask for the right MAVLink messages",
+      "description": "MAVROS doesn't get data the vehicle isn't sending. This node calls `set_message_interval` for each ID and re-applies every 30 s, because ArduPilot forgets its rates across a reboot or a link drop.\n\n```\n24  GPS_RAW_INT       fix type — this is how you know RTK is working\n30  ATTITUDE          orientation\n31  ATTITUDE_QUATERNION\n32  LOCAL_POSITION_NED\n33  GLOBAL_POSITION_INT\n```\n\n**Gotcha, found the hard way:** 24 was missing from this list. `fix_type` came through as `-1` forever while coordinates looked perfectly valid, so the dashboard could never show RTK status and the whole RTK check was silently blind. If a field reads as \"no data\" but neighbouring fields look fine, suspect an unrequested message ID before you suspect the sensor."
+    },
+    {
+      "file": "src/swarm_nodes/swarm_nodes/odom_relay.py",
+      "line": 51,
+      "title": "The maths: lat/lon angles into metres",
+      "description": "You cannot subtract two latitudes and get metres. So both points go into ECEF first — origin at the centre of the Earth, metres on every axis — and then get rotated onto local east/north/up.\n\nThe subtlety is `n`, the prime vertical radius of curvature. Earth is an ellipsoid flattened by ~21 km, so geodetic latitude is the angle of the **local vertical** (how a plumb line hangs), which does not point at the centre except at the equator and the poles. `n` is the distance down that vertical to the spin axis — at 45° it differs from the distance to the centre by 21 km.\n\n**Verified:** against GeographicLib's `CartConvert`, the same library MAVROS links, agreeing to 3 nanometres. Don't re-derive it; it's been checked."
+    },
+    {
+      "file": "src/swarm_nodes/swarm_nodes/odom_relay.py",
+      "line": 278,
+      "title": "The core idea of the whole project",
+      "description": "Each drone's EKF measures from its own private origin — wherever it got its first good GPS fix. Four drones, four incompatible frames, and a formation controller has no way to relate them. ArduPilot won't let you force a shared EKF origin while using GPS, so it's fixed here on the ground.\n\n```\noffset = geodetic_to_enu(global_fix, swarm_origin) − local_position\n```\n\nWhere the drone really is, minus where its EKF thinks it is. That gap is **constant**, because neither zero point moves — so it's measured once, averaged over 25 samples to cancel GPS jitter, and added to every pose afterwards.\n\n**Gotcha:** the drones must be stationary while this resolves. If the sample spread exceeds 1 m the node warns you. Restart it rather than trusting the number."
+    },
+    {
+      "file": "src/swarm_nodes/swarm_nodes/odom_relay.py",
+      "line": 258,
+      "title": "Why the topic can be silent, on purpose",
+      "description": "Until the offset resolves, this node publishes **nothing**. Not a zero, not a best guess.\n\n**Why:** a pose stamped `frame_id: swarm_origin` that isn't actually in that frame is worse than no pose. The controller would act on it. Silence is an obvious failure; a wrong number is an invisible one.\n\n**Implication for debugging:** `ros2 topic echo /drone3/odom` producing nothing usually does *not* mean a crash. Read the node's log — it says exactly which drone is missing a GPS fix.\n\nNote the last lines: only position gets shifted. Velocity and orientation are untouched, because a velocity is the same number regardless of where you put the origin."
+    },
+    {
+      "file": "src/swarm_nodes/swarm_nodes/command_bridge.py",
+      "line": 133,
+      "title": "The clamp — and why it scales instead of truncating",
+      "description": "Everything that moves a drone goes through this node. Limits: 1.0 m/s horizontal, 0.5 m/s vertical, 0.5 rad/s yaw.\n\nThe horizontal clamp scales the **whole vector** rather than each axis:\n\n```\n(3, 4)  →  speed 5  →  scale 0.2  →  (0.6, 0.8)\n```\n\n**The gotcha this avoids:** clamping x and y independently would give `(1.0, 1.0)` — which points 45° away from where the controller asked, at full allowed speed. A limiter that silently steers is far more dangerous than one that slows you down. z and yaw are independent, so those *can* be squeezed per-axis.\n\nThis is also the acceptance test: publish `{linear: {x: 3.0, y: 4.0}}` and `(0.6, 0.8)` must come out."
+    },
+    {
+      "file": "src/swarm_nodes/swarm_nodes/command_bridge.py",
+      "line": 159,
+      "title": "The watchdog — 20 Hz forever, by design",
+      "description": "This timer runs whether or not anyone is commanding. ArduPilot's `GUID_TIMEOUT` (3 s) stops the vehicle when setpoints dry up, so the bridge keeps something flowing and decides what that something is:\n\n| Command age | Sent |\n| --- | --- |\n| < 0.5 s | the command |\n| > 0.5 s | **zero velocity** — stop and hold |\n\n**`hold_mode` is empty by default and should stay that way.** Setting it to `LOITER` makes things *worse*: LOITER takes climb rate from the pilot's throttle stick, so with nobody holding throttle it descends. With no hold mode the drone just holds in GUIDED, recoverable the instant commands resume. Use `BRAKE` if you want a re-handover barrier.\n\n**Gotcha found in the field:** an earlier version latched commands on a timer, which aliased 25 Hz input down to 19 Hz. It now forwards on receipt. Beware timer-driven relays running near their input rate."
+    },
+    {
+      "file": "src/swarm_nodes/swarm_nodes/first_flight.py",
+      "line": 36,
+      "title": "Ctrl-C has to land the aircraft",
+      "description": "`first_flight` drives GUIDED → arm → takeoff → hand over → land. The interesting part is this signal handler.\n\n**The bug it fixes:** rclpy's default SIGINT handler tears the context down immediately. `land_all()` would then try to call a service against a dead context and fail with `rcl node's context is invalid` — **Ctrl-C would abandon armed aircraft in the air instead of landing them.** Caught in SITL, which is exactly the kind of thing SITL is for.\n\nThe fix is `SignalHandlerOptions.NO` in `main()` plus this flag, with the land call using `during_shutdown=True`.\n\n**Expect propellers to keep spinning ~1 s after touchdown.** That's ArduPilot's `LAND_DETECTOR_TRIGGER_SEC`, not a fault — it needs a full second of landed conditions before disarming, so it doesn't cut motors while bouncing off a gust. The drone is still armed. Wait for the dashboard's `armed` row before approaching."
+    },
+    {
+      "file": "src/swarm_nodes/swarm_nodes/rtcm_relay.py",
+      "line": 185,
+      "title": "RTK corrections — parsed, not forwarded blindly",
+      "description": "This is what turns 1–3 m GPS into roughly 1 cm. It reads RTCM3 from the base (serial, or UDP when QGroundControl owns the port) and fans it out to all four drones.\n\nIt parses **whole frames and checks every CRC-24Q** rather than forwarding raw bytes. The reason is in the docstring: `0xD3` is an ordinary byte value that appears by coincidence inside payloads, so the checksum is the only thing that proves you found a real frame boundary. A corrupt correction pushed to four aircraft is worse than a dropped one.\n\n**The operational tell:** the 10-second report lists arriving message types. **1005 or 1006 is the base position** — if it never appears, the base hasn't finished surveying in. That one number is how you know RTK is actually going to work.\n\n**Verified:** CRC implementation checked against ArduPilot's `crc_crc24` across 505 inputs."
+    },
+    {
+      "file": "src/swarm_nodes/swarm_nodes/dashboard.py",
+      "line": 60,
+      "title": "The operator's single screen",
+      "description": "Running a four-drone test from nine terminals is how you miss a drone losing its link. This puts link rate, mode, arming, GPS fix, voltage, shared-frame position and command age side by side, colour-coded.\n\nTwo design decisions worth copying:\n\n- **ROS spins on a background thread**, Qt reads a locked snapshot. A stalled link can never freeze the window — which would be the worst possible moment to lose your instruments.\n- **Stale data is marked, not shown.** `STALE_AFTER = 3.0` turns a frozen rate into `DEAD 8s`. An old number that still looks live is the thing that gets aircraft broken.\n\nNote `FIX_TYPES`: 3D fix renders as a **warning**, not success. Only type 6 (RTK Fixed) is green, because centimetre accuracy is this project's entire premise."
+    },
+    {
+      "file": "docs/FIELD_RUNBOOK.md",
+      "line": 1,
+      "title": "Read this before you go outside",
+      "description": "The staged procedure: ground station → link health → RTK → shared frame → one drone → the swarm. Props stay off until Stage 4.\n\nThe sections to read even if you skip the rest:\n\n- **Emergencies** — the escalation order, memorised, before you need it\n- **Taking manual control** — *throttle stick to MID before you flip out of GUIDED.* A safety pilot who skips this watches the drone descend and thinks they have no control. Found in the field.\n- **The RC pilot always outranks the ground station.** Nothing in this stack can stop a pilot taking over, deliberately.\n\n`docs/GAZEBO_RUNBOOK.md` does the whole thing in simulation first. Do that before your first field day."
+    },
+    {
+      "title": "What you can do now",
+      "description": "You can trace a position from a satellite to RSCL's controller, and a velocity command back down to the motors.\n\n**Suggested first run** — all in the `humble` distrobox container, since the host has no ROS:\n\n1. `tools/sim_gazebo.sh` — four X500s, 3 m apart, matching field spacing\n2. `ros2 launch swarm_bringup mavros_sitl_x4.launch.py`\n3. `ros2 run swarm_nodes stream_setup`, then `odom_relay`, then `dashboard`\n4. Check all four read ≈ 0, 3, 6, 9 m east with `frame_id: swarm_origin`\n\n**Known gaps:** `/droneN/status` (the third topic in the RSCL contract) isn't implemented. The shared origin is re-derived every session — pinning the RTK base to a fixed position would make frames comparable across days.\n\nSimulation runs at ~0.37× real time with four copters in lockstep. A 60 s sequence takes about three minutes of your life. That's normal."
+    }
+  ]
+}

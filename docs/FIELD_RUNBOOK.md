@@ -420,7 +420,11 @@ If two drones both read near `(0,0,0)` while metres apart, the shift was not app
 
 To pin the frame across sessions, use the base's surveyed position:
 ```bash
-ros2 run swarm_nodes odom_relay --ros-args -p origin_lat:=X -p origin_lon:=Y -p origin_alt:=Z
+
+ros2 run swarm_nodes odom_relay --ros-args -p origin_lat:=25.6536193 -p origin_lon:=-100.2864713 -p origin_alt:=509.04262876602337
+
+
+
 ```
 
 ### Compass check while you are out there
