@@ -1,0 +1,20 @@
+SIMULACION:
+
+1 - En tools:
+./tools/sim_gazebo.sh
+
+2 - SITL
+cd ~/ardupilot && ./Tools/autotest/sim_vehicle.py -v ArduCopter -f gazebo-iris --model JSON --count 4 --auto-sysid -L CMAC --no-mavproxy --no-rebuild --add-param-file=$HOME/Documents/VantTec_SDV_SWARM/SWARM_Proyect/Swarm_Workspaces/ROS2_SWARM_WS/src/swarm_bringup/config/x500_v2.parm
+
+
+3 - MAVROS
+ros2 launch swarm_bringup mavros_sitl_x4.launch.py
+
+4 - Frame compartido
+ros2 run swarm_nodes odom_relay
+
+5 - Bridge de comandos
+ros2 run swarm_nodes command_bridge
+
+6 - Experimento
+ros2 launch swarm_formation formation.launch.py use_sim_time:=true record:=false

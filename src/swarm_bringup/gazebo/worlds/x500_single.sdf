@@ -112,7 +112,7 @@
     <!-- drone1: SITL -I0, FDM 9002/9003, MAVLink TCP 5760 -->
     <model name="drone1">
       <!-- Nose north (yaw 90 in a world whose x is east), spread along the east axis. -->
-      <pose degrees="true">0.0 0 0.18 0 0 90</pose>
+      <pose degrees="true">0.0 0 0.24 0 0 90</pose>
       <include>
         <uri>model://x500_v2</uri>
       </include>

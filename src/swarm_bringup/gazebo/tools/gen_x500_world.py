@@ -245,8 +245,9 @@ def main():
     ap.add_argument('--count', type=int, default=4, help='number of copters (default 4)')
     ap.add_argument('--spacing', type=float, default=3.0,
                     help='metres between copters along the east axis. SITL ADDS its own --auto-offset-line\n                              on top, so use half the separation you want: 1.5 here plus\n                              90,1.5 gives 3 m measured (default 1.5)')
-    ap.add_argument('--spawn-z', type=float, default=0.18,
-                    help='height of base_link with the legs on the ground (default 0.18)')
+    # Legs reach 0.227 m below base_link, down to the skids of the frame mesh.
+    ap.add_argument('--spawn-z', type=float, default=0.24,
+                    help='height of base_link with the legs on the ground (default 0.24)')
     ap.add_argument('--first-instance', type=int, default=0,
                     help='SITL instance number of the first copter (default 0). Raise it to run '
                          'a second simulation alongside one already holding 9002 and 5760.')

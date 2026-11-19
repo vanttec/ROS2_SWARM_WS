@@ -115,7 +115,7 @@
     <!-- drone1: SITL -I0, FDM 9002/9003, MAVLink TCP 5760 -->
     <model name="drone1">
       <!-- Nose north (yaw 90 in a world whose x is east), spread along the east axis. -->
-      <pose degrees="true">0.0 0 0.18 0 0 90</pose>
+      <pose degrees="true">0.0 0 0.24 0 0 90</pose>
       <include>
         <uri>model://x500_v2</uri>
       </include>
@@ -364,7 +364,7 @@
     <!-- drone2: SITL -I1, FDM 9012/9013, MAVLink TCP 5770 -->
     <model name="drone2">
       <!-- Nose north (yaw 90 in a world whose x is east), spread along the east axis. -->
-      <pose degrees="true">3.0 0 0.18 0 0 90</pose>
+      <pose degrees="true">3.0 0 0.24 0 0 90</pose>
       <include>
         <uri>model://x500_v2</uri>
       </include>
@@ -613,7 +613,7 @@
     <!-- drone3: SITL -I2, FDM 9022/9023, MAVLink TCP 5780 -->
     <model name="drone3">
       <!-- Nose north (yaw 90 in a world whose x is east), spread along the east axis. -->
-      <pose degrees="true">6.0 0 0.18 0 0 90</pose>
+      <pose degrees="true">6.0 0 0.24 0 0 90</pose>
       <include>
         <uri>model://x500_v2</uri>
       </include>
@@ -862,7 +862,7 @@
     <!-- drone4: SITL -I3, FDM 9032/9033, MAVLink TCP 5790 -->
     <model name="drone4">
       <!-- Nose north (yaw 90 in a world whose x is east), spread along the east axis. -->
-      <pose degrees="true">9.0 0 0.18 0 0 90</pose>
+      <pose degrees="true">9.0 0 0.24 0 0 90</pose>
       <include>
         <uri>model://x500_v2</uri>
       </include>

@@ -9,7 +9,7 @@ DRONES = [  # (namespace, sysid, esp_ip, laptop_port)
     ('drone1', 19, '192.168.50.11', 14551),  # PAPOI
     ('drone2', 17, '192.168.50.12', 14552),  # TRINEO
     ('drone3', 32, '192.168.50.13', 14553),  # BISUU
-    ('drone4', 31, '192.168.50.14', 14554),  # LUCAS
+    #('drone4', 31, '192.168.50.14', 14554),  # LUCAS
 ]
 
 
@@ -29,7 +29,9 @@ def generate_launch_description():
                 'tgt_component': '1',
                 'pluginlists_yaml': plugins,
                 'config_yaml': apm_config,
-                'namespace': ns,
+                # MAVROS (seen on 2.14) puts topics directly under its namespace (/drone1/state), so the
+                # /mavros level our nodes subscribe to (/drone1/mavros/state) has to be part of it.
+                'namespace': f'{ns}/mavros',
             }.items())
         for ns, sysid, ip, port in DRONES]
 

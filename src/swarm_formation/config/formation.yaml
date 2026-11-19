@@ -1,0 +1,45 @@
+# Formation experiment parameters. See README.md, "Tuning".
+
+# Shared by the leader and the four controllers.
+/**:
+  ros__parameters:
+    frame_id: swarm_origin
+    # Box in swarm_origin (east, north, up), metres.
+    fence_min: [-15.0, -15.0, 1.0]
+    fence_max: [25.0, 15.0, 10.0]
+
+formation_leader:
+  ros__parameters:
+    namespaces: [drone1, drone2, drone3, drone4]
+    formation: line             # line | square | triangle; 'line' matches the SITL spawn
+    spacing: 3.0                # m, closest-neighbour distance in every shape
+    transition_time: 6.0        # s, time to morph from one shape to another
+    min_separation: 1.5         # m, shapes or transitions closer than this are rejected
+    rate_hz: 20.0
+    # Keep max_speed_xy + max_yaw_rate * formation radius below v_max_xy (README, "Authority").
+    max_speed_xy: 0.3           # m/s
+    max_speed_z: 0.2            # m/s
+    max_yaw_rate: 0.15          # rad/s
+    max_accel: 0.5              # m/s^2
+    max_yaw_accel: 0.3          # rad/s^2
+    cmd_timeout: 0.5            # s without leader_cmd -> decelerate to rest
+
+/**/formation_controller:
+  ros__parameters:
+    k: 0.8                      # 1/s; error decays as exp(-k t) near the target
+    v_max_xy: 1.0               # m/s; same as command_bridge's clamp
+    v_max_z: 0.5                # m/s; same as command_bridge's clamp
+    k_yaw: 0.8                  # 1/s
+    yaw_rate_max: 0.5           # rad/s; same as command_bridge's clamp
+    ki: 0.0                     # 1/s^2; integral off by default (wind, offsets)
+    i_max: 0.3                  # m/s; the most the integral may contribute
+    rate_hz: 20.0
+    stale_timeout: 0.5          # s; older odometry or target -> zero velocity
+    min_altitude: 1.5           # m; no enabling below this (takeoff still running)
+    max_enable_error: 2.0       # m; no enabling this far from the target
+    max_pose_jump: 1.0          # m between odometry messages -> frame changed, disable
+
+formation_panel:
+  ros__parameters:
+    leader_speed: 0.3           # m/s asked for while a leader button is held
+    leader_yaw_rate: 0.15       # rad/s
