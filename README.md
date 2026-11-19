@@ -312,8 +312,18 @@ side. Against the stock `gazebo-iris`:
 | thrust/weight  | ~3.5         | **2.2**        |
 
 Only mass, inertia and thrust reach the flight dynamics, so those are what the model gets right;
-the geometry is primitives rather than Holybro's meshes, which means there is nothing to download.
-Swap the visuals later if you want presentable screenshots.
+collisions and inertias are primitives sized to them. The **visuals** are meshes from PX4's
+`x500_base` (frame, motors, props), fetched from Gazebo Fuel (version 1, CC0) and cached in
+`~/.gz/fuel` the first time a world loads, so **the first start needs internet** (27 MB). That
+frame is NXP's HoverGames X500-class kit rather than Holybro's own CAD, but the same 500 mm carbon
+X layout. Visuals never change how the copter flies: the hover numbers below are identical with
+the primitive model and the meshes.
+
+The meshes cost GPU, not physics. Measured with four copters and the GUI open: 0.339x real time
+with primitives, 0.332x with meshes rendered on the discrete GPU. On a laptop in NVIDIA "on-demand"
+PRIME mode Gazebo renders on the integrated GPU by default, where the GUI turns choppy; render on
+the discrete one with `__NV_PRIME_RENDER_OFFLOAD=1 __GLX_VENDOR_LIBRARY_NAME=nvidia` in front of
+`./tools/sim_gazebo.sh`, or use `--headless`.
 
 Flown in SITL, the model arms, climbs to 5 m, and holds it at **44% throttle with under 0.2° of
 tilt** — matching the `MOT_THST_HOVER 0.45` in the param file, which is the check that the thrust

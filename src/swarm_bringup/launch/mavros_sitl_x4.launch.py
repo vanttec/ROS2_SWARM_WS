@@ -64,7 +64,9 @@ def launch_setup(context, *args, **kwargs):
                 'tgt_component': '1',
                 'pluginlists_yaml': plugins,
                 'config_yaml': apm_config,
-                'namespace': ns,
+                # MAVROS (seen on 2.14) puts topics directly under its namespace (/drone1/state), so the
+                # /mavros level our nodes subscribe to (/drone1/mavros/state) has to be part of it.
+                'namespace': f'{ns}/mavros',
             }.items())
         for ns, sysid, tcp_port, udp_port in drones]
 
