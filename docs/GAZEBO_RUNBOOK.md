@@ -92,7 +92,7 @@ Done when `build/libArduPilotPlugin.so` exists.
 ### 2. Build the workspace
 
 ```bash
-cd ~/Documents/VANTTEC/ROS2_SWARM_WS
+cd <workspace root>
 colcon build --symlink-install
 source install/setup.bash
 ros2 pkg executables swarm_nodes     # expect 10
@@ -129,7 +129,7 @@ Numbers match the field runbook deliberately, so muscle memory transfers. There 
 
 **G:**
 ```bash
-cd ~/Documents/VANTTEC/ROS2_SWARM_WS && source install/setup.bash
+cd <workspace root> && source install/setup.bash
 ./tools/sim_gazebo.sh                 # add --headless if the GUI misbehaves
 ```
 
@@ -150,12 +150,12 @@ never bind it tails the log and names the cause.
 
 ### Step 2 — four SITL instances
 
-**S:**
+**S:** (with the workspace sourced, so `ros2 pkg prefix` finds the parameter file)
 ```bash
 cd ~/ardupilot
 ./Tools/autotest/sim_vehicle.py -v ArduCopter -f gazebo-iris --model JSON \
     --count 4 --auto-sysid -L CMAC --no-mavproxy \
-    --add-param-file=$HOME/Documents/VANTTEC/ROS2_SWARM_WS/src/swarm_bringup/config/x500_v2.parm
+    --add-param-file=$(ros2 pkg prefix swarm_bringup)/share/swarm_bringup/config/x500_v2.parm
 ```
 
 | Flag | Why |

@@ -14,7 +14,7 @@ Every command used to build, simulate, fly and debug this stack, with what each 
 | `distrobox enter humble` | Enter the ROS 2 Humble container. Needed before anything else |
 | `distrobox list` | Check the container exists and is up |
 | `source /opt/ros/humble/setup.bash` | Make `ros2` available |
-| `source ~/Documents/VANTTEC/ROS2_SWARM_WS/install/setup.bash` | Make *our* nodes available (also sources ROS) |
+| `source <workspace root>/install/setup.bash` | Make *our* nodes available (also sources ROS) |
 | `distrobox enter humble -- bash -lc '<cmd>'` | Run one command in the container without staying in it |
 
 ---

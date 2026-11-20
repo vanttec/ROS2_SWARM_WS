@@ -11,7 +11,7 @@ Every command runs inside the container:
 
 ```bash
 distrobox enter humble
-source ~/Documents/VANTTEC/ROS2_SWARM_WS/install/setup.bash
+source <workspace root>/install/setup.bash
 ```
 
 ---

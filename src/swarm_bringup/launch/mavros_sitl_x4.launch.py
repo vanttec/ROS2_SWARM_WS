@@ -14,7 +14,7 @@ Then SITL, on the host:
 
     ./Tools/autotest/sim_vehicle.py -v ArduCopter -f gazebo-iris --model JSON \\
         --count 4 --auto-sysid --auto-offset-line 90,10 -L CMAC --no-mavproxy \\
-        --add-param-file=$HOME/Documents/VANTTEC/ROS2_SWARM_WS/src/swarm_bringup/config/x500_v2.parm
+        --add-param-file=$(ros2 pkg prefix swarm_bringup)/share/swarm_bringup/config/x500_v2.parm
 
 Nothing moves until all four MAVROS instances are up: the plugin is lock-stepped and a SITL
 instance does not step until a GCS attaches to its MAVLink port. See README.md.

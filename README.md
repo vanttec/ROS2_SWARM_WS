@@ -363,19 +363,19 @@ Then, in the container, point Gazebo at both the plugin and this repo's model an
 Verify one vehicle works before trying four:
 
 ```bash
-cd ~/Documents/VANTTEC/ROS2_SWARM_WS/src/swarm_bringup/gazebo
+cd <workspace root>/src/swarm_bringup/gazebo
 export GZ_SIM_SYSTEM_PLUGIN_PATH=$HOME/gz_ws/src/ardupilot_gazebo/build
 export GZ_SIM_RESOURCE_PATH=$PWD/models
 gz sim -r worlds/x500_single.sdf      # then worlds/x500_swarm.sdf for all four
 ```
 
-On the host:
+On the host, with the workspace sourced:
 
 ```bash
 cd ~/ardupilot
 ./Tools/autotest/sim_vehicle.py -v ArduCopter -f gazebo-iris --model JSON \
     --count 4 --auto-sysid -L CMAC --no-mavproxy \
-    --add-param-file=$HOME/Documents/VANTTEC/ROS2_SWARM_WS/src/swarm_bringup/config/x500_v2.parm
+    --add-param-file=$(ros2 pkg prefix swarm_bringup)/share/swarm_bringup/config/x500_v2.parm
 ```
 
 `-f gazebo-iris` is still the right frame: it is what marks the sim as externally driven, and the
@@ -424,7 +424,7 @@ Prerequisites: Ubuntu 22.04 with ROS 2 Humble, plus
 script.
 
 ```bash
-cd ~/Documents/VANTTEC/ROS2_SWARM_WS
+cd <workspace root>
 colcon build --symlink-install
 source install/setup.bash
 

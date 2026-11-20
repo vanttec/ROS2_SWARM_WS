@@ -31,7 +31,7 @@ if ! command -v gz >/dev/null; then
 fi
 if ! command -v ros2 >/dev/null; then
   echo "ros2 not found -- source the workspace first:" >&2
-  echo "  source ~/Documents/VANTTEC/ROS2_SWARM_WS/install/setup.bash" >&2
+  echo "  source <your workspace>/install/setup.bash" >&2
   exit 1
 fi
 
