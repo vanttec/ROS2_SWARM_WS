@@ -3,6 +3,7 @@ through GUIDED -> arm -> takeoff -> controller -> land.
 
 Leader buttons and keys (arrows, PgUp/PgDn, Q/E, Space to stop) send a velocity while held, at
 10 Hz; releasing sends zero. Nothing happens without a button press; only ARM asks to confirm.
+FOLLOW MOCHILA hands x, y and yaw to the backpack; MANUAL, STOP or Space takes them back.
 """
 import math
 import signal
@@ -20,7 +21,7 @@ from mavros_msgs.msg import State
 from mavros_msgs.srv import CommandBool, CommandTOL, SetMode
 from nav_msgs.msg import Odometry
 from rcl_interfaces.srv import SetParametersAtomically
-from std_msgs.msg import Bool
+from std_msgs.msg import Bool, String
 from std_srvs.srv import SetBool, Trigger
 
 from PyQt5.QtCore import QEvent, Qt, QTimer
@@ -52,6 +53,7 @@ class PanelNode(Node):
                           'active': False} for ns in self.drone_ns}
         self.message = 'ready'
         self.leader, self.leader_t = None, None
+        self.source = None
 
         latched = QoSProfile(depth=1, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL)
         self.cli = {}
@@ -73,6 +75,8 @@ class PanelNode(Node):
         self.create_subscription(Odometry, '/formation/leader', self.on_leader,
                                  qos_profile_sensor_data)
         self.leader_pub = self.create_publisher(Twist, '/formation/leader_cmd', 10)
+        self.create_subscription(String, '/formation/leader_source', self.on_source, latched)
+        self.follow_cli = self.create_client(SetBool, '/formation_leader/follow')
         self.reset_cli = self.create_client(Trigger, '/formation_leader/reset_to_swarm')
         self.param_cli = self.create_client(SetParametersAtomically,
                                             '/formation_leader/set_parameters_atomically')
@@ -91,10 +95,14 @@ class PanelNode(Node):
                            math.hypot(v.linear.x, v.linear.y), v.linear.z, v.angular.z)
             self.leader_t = time.monotonic()
 
+    def on_source(self, msg):
+        with self.lock:
+            self.source = msg.data
+
     def snapshot(self):
         with self.lock:
             return ({ns: dict(d) for ns, d in self.data.items()}, self.message,
-                    self.leader, self.leader_t)
+                    self.leader, self.leader_t, self.source)
 
     def report(self, text):
         with self.lock:
@@ -141,6 +149,10 @@ class PanelNode(Node):
         cmd = Twist()
         cmd.linear.x, cmd.linear.y, cmd.linear.z, cmd.angular.z = vx, vy, vz, w
         self.leader_pub.publish(cmd)
+
+    def follow(self, value):
+        self.call(self.follow_cli, SetBool.Request(data=value),
+                  'follow mochila' if value else 'manual leader')
 
     def reset_leader(self):
         self.call(self.reset_cli, Trigger.Request(), 'reset leader')
@@ -234,6 +246,15 @@ class Panel(QWidget):
         reset.clicked.connect(self.node.reset_leader)
         leader.addWidget(reset, 1, 4)
 
+        source_row = QHBoxLayout()
+        self.source_label = QLabel('')
+        self.source_label.setFont(mono)
+        source_row.addWidget(self.source_label, 1)
+        for text, value in (('MANUAL', False), ('FOLLOW MOCHILA', True)):
+            button = QPushButton(text)
+            button.clicked.connect(lambda _, v=value: self.node.follow(v))
+            source_row.addWidget(button)
+
         self.shape = QComboBox()
         self.shape.addItems(['line', 'square', 'triangle'])
         self.spacing = QDoubleSpinBox()
@@ -270,6 +291,7 @@ class Panel(QWidget):
         outer = QVBoxLayout()
         outer.addLayout(grid)
         outer.addLayout(shape_row)
+        outer.addLayout(source_row)
         outer.addWidget(self.leader_label)
         outer.addWidget(keys)
         outer.addLayout(leader)
@@ -309,7 +331,7 @@ class Panel(QWidget):
     def eventFilter(self, obj, event):
         if obj is self and event.type() == QEvent.WindowDeactivate and self.held:
             # A key released in another window never reaches us, so stop on focus loss.
-            self.stop_leader()
+            self.release_all()
             return False
         if event.type() not in (QEvent.KeyPress, QEvent.KeyRelease) or not self.isActiveWindow():
             return False
@@ -337,9 +359,13 @@ class Panel(QWidget):
         if not self.held:
             self.node.leader_velocity(0.0, 0.0, 0.0, 0.0)
 
-    def stop_leader(self):
+    def release_all(self):
         self.held.clear()
         self.node.leader_velocity(0.0, 0.0, 0.0, 0.0)
+
+    def stop_leader(self):
+        self.release_all()
+        self.node.follow(False)
 
     def stream_leader(self):
         if not self.held:
@@ -356,8 +382,11 @@ class Panel(QWidget):
         cell.setStyleSheet(f'color: {colour};' if colour else '')
 
     def refresh(self):
-        snap, message, leader, leader_t = self.node.snapshot()
+        snap, message, leader, leader_t, source = self.node.snapshot()
         now = time.monotonic()
+        colour = DIM if source in (None, 'MANUAL') else OK if source == 'MOCHILA' else WARN
+        self.source_label.setText(f'source: {source or "?"}')
+        self.source_label.setStyleSheet(f'color: {colour};')
         if leader is None or now - leader_t > STALE_AFTER:
             self.leader_label.setText('leader: not publishing (reset it once the drones are up)')
         else:

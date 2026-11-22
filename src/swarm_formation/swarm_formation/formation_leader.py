@@ -8,6 +8,9 @@ d_i is the drone's offset in the leader frame (x forward, y left). formation, sp
 transition_time are runtime parameters; a change that brings two drones closer than
 min_separation is rejected. Nothing is published until ~/reset_to_swarm.
 Target twists are in frame_id (world ENU), not in the child frame.
+
+~/follow switches the leader to the x, y and yaw of follow_topic (the backpack). The velocity then
+comes from the distance to it, under the same limits; altitude still comes from leader_cmd.
 """
 import math
 
@@ -17,11 +20,13 @@ from rclpy.qos import QoSDurabilityPolicy, QoSProfile, qos_profile_sensor_data
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
 from rcl_interfaces.msg import SetParametersResult
-from std_msgs.msg import Bool
-from std_srvs.srv import Trigger
+from std_msgs.msg import Bool, String
+from std_srvs.srv import SetBool, Trigger
 
 FORMATIONS = ('square', 'line', 'triangle')
 SQRT3_2 = math.sqrt(3.0) / 2.0
+# 1/s. Up to 2 * max_accel / max_speed_xy, the leader stops on the backpack without overshoot.
+FOLLOW_GAIN = 1.0
 
 
 def formation_offsets(name, s):
@@ -57,6 +62,10 @@ def wrap(angle):
     return math.atan2(math.sin(angle), math.cos(angle))
 
 
+def yaw_of(q):
+    return math.atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z))
+
+
 class FormationLeader(Node):
     def __init__(self):
         super().__init__('formation_leader')
@@ -76,6 +85,9 @@ class FormationLeader(Node):
         self.max_accel = p('max_accel', 0.5).value
         self.max_yaw_accel = p('max_yaw_accel', 0.3).value
         self.cmd_timeout = p('cmd_timeout', 0.5).value
+        follow_topic = p('follow_topic', '/mochila_rtk/odom').value
+        self.follow_timeout = p('follow_timeout', 0.5).value
+        self.max_follow_jump = p('max_follow_jump', 1.0).value
         self.frame_id = p('frame_id', 'swarm_origin').value
         self.fence_min = p('fence_min', [-15.0, -15.0, 1.0]).value
         self.fence_max = p('fence_max', [25.0, 15.0, 10.0]).value
@@ -84,6 +96,9 @@ class FormationLeader(Node):
         self.vel = [0.0, 0.0, 0.0, 0.0]     # [vx, vy, vz, w], world frame
         self.cmd = [0.0, 0.0, 0.0, 0.0]
         self.cmd_time = None
+        self.following = False
+        self.backpack = None                # (x, y, yaw, receipt time)
+        self.source = None
         self.last_tick = None
         offsets = formation_offsets(self.formation, self.spacing)
         self.transition = (offsets, offsets, 0.0)   # (start, goal, start_time)
@@ -104,7 +119,11 @@ class FormationLeader(Node):
                                      lambda m, ns=ns: self.active.__setitem__(ns, m.data),
                                      latched)
         self.create_subscription(Twist, '/formation/leader_cmd', self.on_cmd, 10)
+        self.create_subscription(Odometry, follow_topic, self.on_backpack, qos_profile_sensor_data)
+        self.source_pub = self.create_publisher(String, '/formation/leader_source', latched)
+        self.set_source('MANUAL')
         self.create_service(Trigger, '~/reset_to_swarm', self.on_reset)
+        self.create_service(SetBool, '~/follow', self.on_follow)
         self.add_on_set_parameters_callback(self.on_parameters)
         self.create_timer(1.0 / rate_hz, self.tick)
         self.get_logger().info(
@@ -119,9 +138,22 @@ class FormationLeader(Node):
     def on_odom(self, ns, msg):
         if msg.header.frame_id != self.frame_id:
             return
+        p = msg.pose.pose.position
+        self.poses[ns] = (p.x, p.y, p.z, yaw_of(msg.pose.pose.orientation), self.now())
+
+    def on_backpack(self, msg):
         p, q = msg.pose.pose.position, msg.pose.pose.orientation
-        yaw = math.atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z))
-        self.poses[ns] = (p.x, p.y, p.z, yaw, self.now())
+        if msg.header.frame_id != self.frame_id:
+            return
+        # An all-zero quaternion would read as a valid yaw of 0.
+        norm = math.hypot(q.x, q.y, q.z, q.w)
+        if not all(math.isfinite(v) for v in (p.x, p.y, norm)) or norm < 0.5:
+            return
+        if self.following:
+            jump = math.dist((p.x, p.y), self.backpack[:2])
+            if jump > self.max_follow_jump:
+                self.stop_following(f'mochila jumped {jump:.2f} m')
+        self.backpack = (p.x, p.y, yaw_of(q), self.now())
 
     def on_cmd(self, msg):
         values = (msg.linear.x, msg.linear.y, msg.linear.z, msg.angular.z)
@@ -135,6 +167,46 @@ class FormationLeader(Node):
                     max(-self.max_speed_z, min(self.max_speed_z, msg.linear.z)),
                     max(-self.max_yaw_rate, min(self.max_yaw_rate, msg.angular.z))]
         self.cmd_time = self.now()
+
+    def set_source(self, text):
+        if text != self.source:
+            self.source = text
+            self.source_pub.publish(String(data=text))
+            self.get_logger().info(f'leader source: {text}')
+
+    def stop_following(self, reason=''):
+        if self.following:
+            self.following = False
+            self.cmd_time = None
+            self.set_source(f'MANUAL ({reason})' if reason else 'MANUAL')
+
+    def backpack_fresh(self, now):
+        return self.backpack is not None and now - self.backpack[3] < self.follow_timeout
+
+    def on_follow(self, request, response):
+        if not request.data:
+            self.stop_following()
+            response.success, response.message = True, 'manual'
+            return response
+        problem = None
+        if self.leader is None:
+            problem = 'reset the leader first'
+        elif not self.backpack_fresh(self.now()):
+            problem = f'no fresh mochila odometry in {self.frame_id}'
+        elif not all(lo <= v <= hi for v, lo, hi in
+                     zip(self.backpack[:2], self.fence_min, self.fence_max)):
+            problem = (f'mochila at {self.backpack[0]:.1f}, {self.backpack[1]:.1f} '
+                       f'is outside the fence')
+        if problem:
+            response.success, response.message = False, problem
+            self.get_logger().warn(f'follow refused: {problem}')
+            return response
+        self.following = True
+        self.set_source('MOCHILA')
+        response.success = True
+        response.message = (f'following, {math.dist(self.leader[:2], self.backpack[:2]):.1f} m '
+                            f'to the mochila')
+        return response
 
     def on_reset(self, request, response):
         if any(self.active.values()):
@@ -155,6 +227,7 @@ class FormationLeader(Node):
                        sum(f[2] for f in fresh) / n, psi]
         self.vel = [0.0, 0.0, 0.0, 0.0]
         self.cmd_time = None
+        self.stop_following()
         goal = self.transition[1]
         self.transition = (goal, goal, now)
         response.success = True
@@ -208,6 +281,19 @@ class FormationLeader(Node):
         rates = [((g[0] - s[0]) * rate, (g[1] - s[1]) * rate) for s, g in zip(start, goal)]
         return offsets, rates
 
+    def follow_cmd(self, now, vz):
+        if not self.backpack_fresh(now):
+            self.set_source('MOCHILA (no data, holding)')
+            return [0.0, 0.0, vz, 0.0]
+        self.set_source('MOCHILA')
+        x, y, yaw, _ = self.backpack
+        vx, vy = FOLLOW_GAIN * (x - self.leader[0]), FOLLOW_GAIN * (y - self.leader[1])
+        speed = math.hypot(vx, vy)
+        if speed > self.max_speed_xy:
+            vx, vy = vx * self.max_speed_xy / speed, vy * self.max_speed_xy / speed
+        w = FOLLOW_GAIN * wrap(yaw - self.leader[3])
+        return [vx, vy, vz, max(-self.max_yaw_rate, min(self.max_yaw_rate, w))]
+
     def tick(self):
         now = self.now()
         dt = 0.0 if self.last_tick is None else now - self.last_tick
@@ -220,6 +306,8 @@ class FormationLeader(Node):
 
         fresh = self.cmd_time is not None and now - self.cmd_time < self.cmd_timeout
         cmd = self.cmd if fresh else [0.0, 0.0, 0.0, 0.0]
+        if self.following:
+            cmd = self.follow_cmd(now, cmd[2])
 
         dvx, dvy = cmd[0] - self.vel[0], cmd[1] - self.vel[1]
         dv = math.hypot(dvx, dvy)

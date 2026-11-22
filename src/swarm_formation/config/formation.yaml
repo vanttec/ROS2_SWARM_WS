@@ -23,6 +23,9 @@ formation_leader:
     max_accel: 0.5              # m/s^2
     max_yaw_accel: 0.3          # rad/s^2
     cmd_timeout: 0.5            # s without leader_cmd -> decelerate to rest
+    follow_topic: /mochila_rtk/odom
+    follow_timeout: 0.5         # s without follow_topic -> decelerate to rest
+    max_follow_jump: 1.0        # m between follow_topic messages -> back to manual
 
 /**/formation_controller:
   ros__parameters:

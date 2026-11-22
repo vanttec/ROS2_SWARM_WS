@@ -4,7 +4,10 @@ SIMULACION:
 ./tools/sim_gazebo.sh
 
 2 - SITL
-cd ~/ardupilot && ./Tools/autotest/sim_vehicle.py -v ArduCopter -f gazebo-iris --model JSON --count 4 --auto-sysid -L CMAC --no-mavproxy --no-rebuild --add-param-file=$HOME/Documents/VantTec_SDV_SWARM/SWARM_Proyect/Swarm_Workspaces/ROS2_SWARM_WS/src/swarm_bringup/config/x500_v2.parm
+cd ~/ardupilot
+./Tools/autotest/sim_vehicle.py -v ArduCopter -f gazebo-iris --model JSON \
+    --count 4 --auto-sysid -L CMAC --no-mavproxy \
+    --add-param-file=$(ros2 pkg prefix swarm_bringup)/share/swarm_bringup/config/x500_v2.parm
 
 
 3 - MAVROS
@@ -18,3 +21,6 @@ ros2 run swarm_nodes command_bridge
 
 6 - Experimento
 ros2 launch swarm_formation formation.launch.py use_sim_time:=true record:=false
+
+7 - Corres el Rosbag
+ros2 bag play rosbags/rosbag_11_nov_2026_mochilartk_3 --topics /mochila_rtk/odom (Aqui ya es lo que caiga xd)

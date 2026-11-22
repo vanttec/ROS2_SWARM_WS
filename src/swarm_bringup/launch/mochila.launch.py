@@ -28,7 +28,7 @@ def generate_launch_description():
             'tgt_component': '1',
             'pluginlists_yaml': plugins,
             'config_yaml': apm_config,
-            'namespace': MOCHILA_NS,
+            'namespace': f'{MOCHILA_NS}/mavros',
         }.items())
 
     # 2. Configurar la tasa de refresco a 25 Hz para la mochila
