@@ -7,11 +7,11 @@ you should see.
 
 **Read [Emergencies](#emergencies) before the first flight of the day, not during one.**
 
-Every command runs inside the container:
+For the simulated rehearsal, use the [Gazebo runbook](GAZEBO_RUNBOOK.md). For this field procedure, open each terminal in the workspace root and enter the container:
 
 ```bash
 distrobox enter humble
-source <workspace root>/install/setup.bash
+source install/setup.bash
 ```
 
 ---
@@ -23,7 +23,7 @@ will be reaching for the right one under pressure.
 
 | # | Runs | Stays open | Purpose |
 | --- | --- | --- | --- |
-| **T0** | `mochila.launch.py` | all day, leader tests only | the backpack's MAVROS + `stream_setup_mochila` + `nodo_mochila` |
+| **T0** | `mochila.launch.py` | live mochila or trajectory recording only | the backpack's MAVROS + `stream_setup_mochila` + `nodo_mochila` |
 | **T1** | `mavros_x4.launch.py` | all day | the four links + `stream_setup` |
 | **T2** | `rtcm_relay` | all day | RTK corrections to every drone — and the backpack, it's in the node's default namespace list |
 | **T3** | `odom_relay` | all day | `/droneN/odom` in the shared frame — `/mochila_rtk/odom` too, same default |
@@ -33,6 +33,8 @@ will be reaching for the right one under pressure.
 | **T7** | `teleop_velocity` or `sequence_player` | per test | flying it |
 | **T8** | `link_monitor` / `orientation_monitor` | as needed | diagnostics — both already cover the backpack |
 | **T9** | free | — | `ros2 topic echo`, one-off service calls |
+| **F** | formation launch and panel | Stage 6 | virtual leader, four follower controllers, flight controls |
+| **B** | bag player or recorder | Stage 6, as needed | play a recorded leader trajectory or capture the live mochila |
 
 T0–T5 start once and are left alone. T6 is the one you reach for in a hurry. Skip T0 entirely on
 a drones-only session — nothing else here depends on the leader being present.
@@ -374,7 +376,8 @@ Cross-check against the rest of the stack, same data from two other angles:
 Place the four on marks — a straight line 3 m apart is easiest to measure. **Write down the real
 tape numbers.** Then, with the drones **completely still**:
 
-**T3:**
+**T3:** For a live mochila, use the default below. For a recorded leader, use the four-drone T3 command in [Stage 6](#stage-6--leaderfollower-formations) here, before takeoff. Keep this relay running through the flight.
+
 ```bash
 ros2 run swarm_nodes odom_relay
 ```
@@ -518,6 +521,86 @@ ros2 run swarm_nodes first_flight --ros-args \
 Repeat Stage 4's five checks at each size before adding another. Only when all four hold station
 and the dashboard reads `shared frame resolved | RTK Fixed on all 4` should the formation
 controller be connected to `/droneN/odom` and `/droneN/cmd_vel`.
+
+---
+
+# Stage 6 — Leader/follower formations
+
+Use a fresh sortie after the Stage 5 landing. Start with the four aircraft on their measured marks, the field MAVROS launch in T1, RTCM corrections in T2, the shared-frame relay in T3, and `command_bridge` in T4. Keep the dashboard and RC safety pilots in place. Stop the previous sortie’s `first_flight`, teleop and sequence player before using the formation panel. In this sortie **LAND ALL** in the panel commands landing; closing the panel does not.
+
+Choose the leader source **on the ground, before starting T3 in Stage 3**. Both sources publish the same topic. Use one publisher for the flight and keep the same shared origin until landing.
+
+### A. Live mochila RTK
+
+Start these in separate terminals if they are not already running:
+
+```bash
+# T0 — backpack MAVROS and RTK status (Stage 2c)
+ros2 launch swarm_bringup mochila.launch.py
+```
+
+```bash
+# T3 — resolves the four aircraft and the backpack into swarm_origin
+ros2 run swarm_nodes odom_relay
+```
+
+Wait for the backpack’s RTK Fixed indication and its resolved offset. In T9, verify that the reported backpack position agrees with its measured field mark and that its yaw agrees with the heading check in Stage 3.
+
+To capture a walking trajectory for later replay, run the following in **B** from the workspace root. This can be done with props off. Stop the recorder with Ctrl-C after the walk and note the shared origin and heading used on site.
+
+```bash
+mkdir -p rosbags
+bag="rosbags/mochila_field_$(date +%Y%m%d_%H%M%S)"
+ros2 bag record -o "$bag" /mochila_rtk/odom
+ros2 bag info "$bag"
+```
+
+### B. Recorded mochila trajectory
+
+Leave T0 closed and start T3 with just the four aircraft so the player owns the backpack topic:
+
+```bash
+# T3 — start on the ground in Stage 3
+ros2 run swarm_nodes odom_relay --ros-args \
+  -p namespaces:="['drone1','drone2','drone3','drone4']"
+```
+
+In **B**, choose the input from the workspace root. The team example is:
+
+```bash
+bag=rosbags/rosbag_11_nov_2026_mochilartk_3
+ros2 bag info "$bag"
+```
+
+Confirm the bag contains `/mochila_rtk/odom` of type `nav_msgs/msg/Odometry`. Recorded x/y values are metres from the recording’s origin. A matching `swarm_origin` label alone does not align two test sites. Rehearse the complete path in Gazebo and verify its placement, heading and clearance for **every follower slot** against today’s marks and fence. For a repeat of the same geographic route, use the surveyed recording origin for T3. Keep live aircraft odometry and wall time throughout playback.
+
+### Start the formation and acquire the leader
+
+1. In **F**, from the sourced workspace root, start the field panel. Optional `record:=true` records experiment outputs in the current directory; B can separately record the live backpack input.
+
+   ```bash
+   ros2 launch swarm_formation formation.launch.py use_sim_time:=false record:=true
+   ```
+
+2. Check the site’s approved flight area against the configured fence and the selected takeoff height. Defaults are in [formation.yaml](../src/swarm_formation/config/formation.yaml). For site-specific settings pass `params_file:=path/to/field_formation.yaml` using your team’s reviewed copy. Begin with **line**, the marked spacing and matching aircraft order and heading. The default spacing is 3 m and the transition takes 6 s. **Triangle places the fourth aircraft at the leader’s horizontal position.** Use a recorded or virtual leader for that shape whenever a live carrier would be beneath a flight path. Check personnel clearance throughout shape changes as well as at their endpoints.
+3. Once Stage 5 checks pass, use **ALL → GUIDED**, confirm all four modes, then **ALL → ARM**. When all four show **ARMED**, press **ALL → TAKEOFF** promptly. Wait for stable altitude above the controller minimum (default 1.5 m). Press **RESET LEADER to swarm**, wait for the panel to show the centroid and heading, then **ALL → CTRL ON**. Confirm four controllers **ON** and check the position error in each column.
+4. For **recorded** input, now start playback in **B**. For **live** input, keep T0 and T3 running.
+
+   ```bash
+   ros2 bag play "$bag" --topics /mochila_rtk/odom
+   ```
+
+5. In **T9**, check for one publisher, a fresh pose, and `frame_id: swarm_origin`. Compare the initial x/y with the leader position in the panel before engaging follow. A distant starting point commands horizontal motion toward it.
+
+   ```bash
+   ros2 topic info /mochila_rtk/odom
+   ros2 topic echo /mochila_rtk/odom --once --qos-reliability best_effort
+   ```
+
+6. Press **FOLLOW MOCHILA** while samples are arriving and confirm **source: MOCHILA**. The virtual leader tracks the mochila’s x, y and yaw; vertical motion stays under operator control. To change shape, select **line**, **square** or **triangle**, set spacing and transition time, then press **APPLY FORMATION**. Check the panel response and each follower’s error before another change.
+7. Select **MANUAL** before stopping playback or changing sources. If input goes stale, the leader decelerates and the panel shows **MOCHILA (no data, holding)**; fresh samples can resume following. Select **MANUAL** to end that behavior. To finish, press **LAND ALL**, confirm all four landed and disarmed, then stop the recorder and launch processes. For loss of control, follow [Emergencies](#emergencies).
+
+Four-drone takeoff, formation enable and mochila replay have been observed in SITL. Record outdoor results separately. [Gazebo rehearsal](GAZEBO_RUNBOOK.md#formation-and-mochila-replay)
 
 ---
 
