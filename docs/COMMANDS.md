@@ -33,7 +33,7 @@ For the simulation sequence, see the [Gazebo runbook](GAZEBO_RUNBOOK.md). Run RO
 | Command | Purpose |
 | --- | --- |
 | `pip3 install --user "empy==3.3.4"` | Build dependency. 4.x breaks ArduPilot |
-| `cd "${ARDUPILOT_DIR:-../ardupilot}" && ./waf configure --board sitl` | Configure for simulation |
+| `cd ~/ardupilot && ./waf configure --board sitl` | Configure for simulation |
 | `./waf copter` | Build `arducopter` |
 | `./waf distclean` | **Wipe the build tree.** Required when switching between host and container — mixing their object files gives `undefined reference to __isoc23_strtoul` |
 | `./build/sitl/bin/arducopter --help` | Confirm the binary runs here. `GLIBC not found` means it was built for the other environment |
