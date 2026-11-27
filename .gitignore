@@ -29,3 +29,6 @@ terrain/
 
 # Gazebo
 .gz/
+
+AGENTS.md
+CLAUDE.md
