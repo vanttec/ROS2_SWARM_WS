@@ -6,7 +6,7 @@ log/
 graphify-out/
 .claude/
 CLAUDE.md
-
+/.codex
 # python
 __pycache__/
 *.pyc
