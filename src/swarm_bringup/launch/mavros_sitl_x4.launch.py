@@ -3,23 +3,8 @@
 Mirrors mavros_x4.launch.py, but points at localhost SITL rather than the ESP8266 bridges, and uses
 the sysids SITL assigns with --auto-sysid (1-4) rather than the aircraft's own (19/17/32/31).
 
-Start Gazebo with the four X500 V2 copters, in the container:
-
-    cd src/swarm_bringup/gazebo
-    export GZ_SIM_SYSTEM_PLUGIN_PATH=$HOME/gz_ws/src/ardupilot_gazebo/build
-    export GZ_SIM_RESOURCE_PATH=$PWD/models
-    gz sim -r worlds/x500_swarm.sdf
-
-Then SITL, on the host:
-
-    ./Tools/autotest/sim_vehicle.py -v ArduCopter -f gazebo-iris --model JSON \\
-        --count 4 --auto-sysid --auto-offset-line 90,10 -L CMAC --no-mavproxy \\
-        --add-param-file=$(ros2 pkg prefix swarm_bringup)/share/swarm_bringup/config/x500_v2.parm
-
-Nothing moves until all four MAVROS instances are up: the plugin is lock-stepped and a SITL
-instance does not step until a GCS attaches to its MAVLink port. See README.md.
-
-Then here:
+Follow docs/GAZEBO_RUNBOOK.md from the workspace root. Start Gazebo, then the four
+SITL instances. In a separate sourced ROS terminal, launch one MAVROS group:
 
     ros2 launch swarm_bringup mavros_sitl_x4.launch.py
 
@@ -64,9 +49,8 @@ def launch_setup(context, *args, **kwargs):
                 'tgt_component': '1',
                 'pluginlists_yaml': plugins,
                 'config_yaml': apm_config,
-                # MAVROS (seen on 2.14) puts topics directly under its namespace (/drone1/state), so the
-                # /mavros level our nodes subscribe to (/drone1/mavros/state) has to be part of it.
-                'namespace': f'{ns}/mavros',
+                # node.launch adds the mavros namespace below the vehicle namespace.
+                'namespace': ns,
             }.items())
         for ns, sysid, tcp_port, udp_port in drones]
 
