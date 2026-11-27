@@ -133,39 +133,15 @@ as a backstop.
 
 ## Running it in SITL
 
-Bring up the simulation as in [`docs/GAZEBO_RUNBOOK.md`](../../docs/GAZEBO_RUNBOOK.md) (Gazebo,
-four SITL instances, `mavros_sitl_x4.launch.py`), then `odom_relay` **before takeoff** and
-`command_bridge`. Then:
+Follow the [Gazebo runbook](../../docs/GAZEBO_RUNBOOK.md) for setup and the [formation and mochila replay procedure](../../docs/GAZEBO_RUNBOOK.md#formation-and-mochila-replay) for panel operation. The launch starts the leader, one controller per drone, the panel and, with `use_sim_time:=true`, the Gazebo clock relay. Gazebo supplies the clock during bag playback.
+
+To analyze a flight, set `record:=true` on the formation launch. After stopping the recorder, supply the recorded output directory to `plot_errors`:
 
 ```bash
-ros2 launch swarm_formation formation.launch.py use_sim_time:=true record:=true
+ros2 run swarm_formation plot_errors "$experiment_bag" --out errors.png
 ```
 
-`use_sim_time` matters in SITL: four lockstepped copters run slower than real time, and a leader
-integrating wall-clock time would run ahead of drones flying in simulated time. Humble's
-`ros_gz_bridge` is built for Gazebo Fortress and cannot see Harmonic's topics, so `gz_clock`
-relays the clock with Harmonic's own Python bindings. In the field, leave it out
-(`use_sim_time` defaults to false).
-
-In the panel:
-
-1. **ALL → GUIDED**, **ALL → ARM** (one confirmation), then **ALL → TAKEOFF** straight away.
-   ArduCopter disarms if it sits armed too long without taking off.
-2. Wait until all four reach altitude, then **RESET LEADER** (centroid and mean heading of the
-   swarm). In SITL the drones spawn 3 m apart abreast, so the default `line` at 3 m matches the
-   spawn layout and `|e|` reads about 0.
-3. **ALL → CTRL ON**.
-4. Pick a shape, **APPLY FORMATION**. **Hold** the arrow and yaw buttons, or the keys (arrows,
-   PgUp/PgDn, Q/E, Space to stop), to move the leader. It accelerates gently to 0.3 m/s, so a
-   short press moves it only centimetres; the line above the buttons shows where it is. Losing
-   window focus stops it.
-5. **ALL → LAND** (or **LAND ALL**). The controllers disable themselves on entering LAND.
-
-The bag lands in the current directory; plot it with
-
-```bash
-ros2 run swarm_formation plot_errors rosbag2_<date> --out errors.png
-```
+Set `experiment_bag` to the recording from that launch. The mochila input bag contains the leader’s recorded source trajectory.
 
 ## Tuning
 
