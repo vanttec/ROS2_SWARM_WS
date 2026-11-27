@@ -49,9 +49,8 @@ def generate_launch_description():
         Node(package='swarm_formation', executable='formation_leader',
              name='formation_leader', output='screen', parameters=[params, sim_time]),
         *controllers,
-        # The panel stays on wall time: it only streams button presses.
         Node(package='swarm_formation', executable='formation_panel', name='formation_panel',
-             parameters=[params], condition=IfCondition(LaunchConfiguration('panel'))),
+             parameters=[params, sim_time], condition=IfCondition(LaunchConfiguration('panel'))),
         ExecuteProcess(cmd=['ros2', 'bag', 'record', *RECORD], output='screen',
                        condition=IfCondition(LaunchConfiguration('record'))),
     ])

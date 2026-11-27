@@ -85,6 +85,8 @@ class PanelNode(Node):
         # ROS callbacks run on a background thread, Qt on the main one.
         with self.lock:
             self.data[ns][key] = value
+            if key == 'state':
+                self.data[ns]['state_ros_t'] = self.get_clock().now().nanoseconds
             if key in ('state', 'error'):
                 self.data[ns][key + '_t'] = time.monotonic()
 
@@ -396,8 +398,14 @@ class Panel(QWidget):
                 f'| {speed:.2f} m/s, vz {vz:+.2f}, yaw rate {w:+.2f}')
         for ns, d in snap.items():
             state = d['state']
-            if state is None or now - d['state_t'] > STALE_AFTER:
+            # Heartbeats follow simulation time. Keep a wall-time limit for a stopped clock.
+            age = ((self.node.get_clock().now().nanoseconds - d['state_ros_t']) / 1e9
+                   if state is not None else math.inf)
+            if state is None or not 0 <= age <= STALE_AFTER or now - d['state_t'] > 10.0:
                 self.set(ns, 'mode', 'NO DATA', BAD)
+                self.set(ns, 'armed', '?', BAD)
+            elif not state.connected:
+                self.set(ns, 'mode', 'DISCONNECTED', BAD)
                 self.set(ns, 'armed', '?', BAD)
             else:
                 self.set(ns, 'mode', state.mode, OK if state.mode == 'GUIDED' else WARN)
