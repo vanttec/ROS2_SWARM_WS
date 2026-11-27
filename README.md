@@ -289,14 +289,7 @@ publishes its sensor topics with.
 
 ## Simulation (ArduPilot SITL + Gazebo)
 
-The four aircraft can be replaced by ArduPilot SITL flying a Gazebo model of the **Holybro X500
-V2**, so the simulated airframe is the one on the bench rather than the stock Iris. SITL is
-useful here because each copter can be given **its own EKF origin** — the same frame mismatch you
-get outdoors, reproducible on a laptop without flying.
-
-Gazebo runs in the `humble` container (that's where `gz` and the headers are); ArduPilot SITL runs
-on the host (its binary is built against the host's glibc). They reach each other over localhost
-because the container shares the host network namespace.
+The [Gazebo runbook](docs/GAZEBO_RUNBOOK.md) takes the team from a clean workspace build through four X500s in SITL, shared-frame odometry, panel takeoff, formation control and recorded mochila playback. It also covers the manual flight rehearsal and shutdown.
 
 ### The X500 V2 model
 
@@ -341,81 +334,11 @@ cd src/swarm_bringup/gazebo/tools
 
 Edit `gen_x500_world.py` and regenerate; do not edit the `.sdf`.
 
-### Running it
+### Shared-frame spacing
 
-| Instance | sysid | FDM (SITL↔gz) | MAVLink TCP |
-| -------- | ----- | ------------- | ----------- |
-| `-I0`    | 1     | 9002 / 9003   | 5760        |
-| `-I1`    | 2     | 9012 / 9013   | 5770        |
-| `-I2`    | 3     | 9022 / 9023   | 5780        |
-| `-I3`    | 4     | 9032 / 9033   | 5790        |
+The standard world spawns the drones at 0, 3, 6 and 9 m east. With all four SITL instances started at CMAC, local odometry can already contain that displacement. Small relay corrections are expected. Check the positions on `/droneN/odom` to verify spacing.
 
-One-time setup of the ArduPilot↔Gazebo bridge plugin, **inside the container**:
-
-```bash
-mkdir -p ~/gz_ws/src && cd ~/gz_ws/src
-git clone https://github.com/ArduPilot/ardupilot_gazebo.git
-cd ardupilot_gazebo && export GZ_VERSION=harmonic
-cmake -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo && cmake --build build -j$(nproc)
-```
-
-Then, in the container, point Gazebo at both the plugin and this repo's model and start the world.
-Verify one vehicle works before trying four:
-
-```bash
-cd <workspace root>/src/swarm_bringup/gazebo
-export GZ_SIM_SYSTEM_PLUGIN_PATH=$HOME/gz_ws/src/ardupilot_gazebo/build
-export GZ_SIM_RESOURCE_PATH=$PWD/models
-gz sim -r worlds/x500_single.sdf      # then worlds/x500_swarm.sdf for all four
-```
-
-On the host, with the workspace sourced:
-
-```bash
-cd ~/ardupilot
-./Tools/autotest/sim_vehicle.py -v ArduCopter -f gazebo-iris --model JSON \
-    --count 4 --auto-sysid -L CMAC --no-mavproxy \
-    --add-param-file=$(ros2 pkg prefix swarm_bringup)/share/swarm_bringup/config/x500_v2.parm
-```
-
-`-f gazebo-iris` is still the right frame: it is what marks the sim as externally driven, and the
-only iris-specific parameters it loads (IRLock, a simulated analog rangefinder) are switched back
-off in `x500_v2.parm`.
-
-And in the container, in place of `mavros_x4.launch.py`:
-
-```bash
-ros2 launch swarm_bringup mavros_sitl_x4.launch.py
-```
-
-Everything downstream — `odom_relay`, `link_monitor`, `orientation_monitor`, `teleop_velocity` —
-works unchanged against the simulator, because the namespaces and topic names are identical.
-
-### Two things that will confuse you once
-
-**Nothing moves until every link is up.** The plugin runs `lock_step`, and all four copters live in
-one Gazebo world, so the world cannot step until all four SITL instances are being driven — and a
-SITL instance does not start its loop until a GCS attaches to its MAVLink port. Start Gazebo, start
-SITL, then launch MAVROS; the scene is frozen in between, which is not a fault. Expect roughly
-**0.37× real time** with four copters on one machine (measured), so a 25 Hz stream arrives at
-closer to 9 Hz on the wall clock. Judge rates against `link_monitor` in SITL only relatively.
-
-**Spacing lives in the world, not in `--auto-offset-line`.** SITL anchors each instance's EKF
-origin to its `--home`, and `--auto-offset-line` shifts that home *without moving the model in
-Gazebo*. Use both and the two disagree: measured with a 1.5 m world plus `90,1.5`, Gazebo showed
-the copters 1.5 m apart while `/droneN/odom` reported 3 m — both "correct", since the published
-value is the true geodetic position, but the picture no longer matches the field.
-
-So the world carries the full 3 m and no offset is passed. Gazebo and `/droneN/odom` then agree,
-and the layout matches what you tape out on the ground.
-
-The offset-cancellation maths was proven separately on 30 Oct with a 1.5 m world plus `90,1.5`:
-offsets resolved to `+0.01 / +1.51 / +3.01 / +4.51` and published positions came out
-`0 / 2.999 / 5.999 / 8.998 m` — within 2 mm across four drones.
-
-Each drone sits at a different, non-zero offset from its own origin, which is the condition the
-shared-frame maths needs to be tested against. Do not read absolute formation distances off the
-simulated map.
+A separate offset-cancellation test used a 1.5 m world and `--auto-offset-line 90,1.5`. It produced offsets of approximately 0, 1.5, 3 and 4.5 m and published positions near 0, 3, 6 and 9 m. That configuration intentionally makes the reported spacing differ from Gazebo’s model spacing.
 
 ## Build and run
 
@@ -424,7 +347,7 @@ Prerequisites: Ubuntu 22.04 with ROS 2 Humble, plus
 script.
 
 ```bash
-cd <workspace root>
+cd "$(git rev-parse --show-toplevel)"
 colcon build --symlink-install
 source install/setup.bash
 
