@@ -3,7 +3,7 @@
 Every command used to build, simulate, fly and debug this stack, with what each one is for. For the
 *order* to run things in on a test day, see [`FIELD_RUNBOOK.md`](FIELD_RUNBOOK.md).
 
-**Everything runs inside the container.** The Ubuntu 26 host has no ROS 2.
+For the simulation sequence, see the [Gazebo runbook](GAZEBO_RUNBOOK.md). Run ROS commands from the workspace root in the Humble environment. SITL can also run on a host that shares the container network.
 
 ---
 
@@ -14,7 +14,7 @@ Every command used to build, simulate, fly and debug this stack, with what each 
 | `distrobox enter humble` | Enter the ROS 2 Humble container. Needed before anything else |
 | `distrobox list` | Check the container exists and is up |
 | `source /opt/ros/humble/setup.bash` | Make `ros2` available |
-| `source <workspace root>/install/setup.bash` | Make *our* nodes available (also sources ROS) |
+| `source install/setup.bash` | Make *our* nodes available (also sources ROS) |
 | `distrobox enter humble -- bash -lc '<cmd>'` | Run one command in the container without staying in it |
 
 ---
@@ -23,9 +23,9 @@ Every command used to build, simulate, fly and debug this stack, with what each 
 
 | Command | Purpose |
 | --- | --- |
-| `colcon build --symlink-install` | Build both packages. `--symlink-install` means Python edits take effect without rebuilding |
+| `colcon build --symlink-install` | Build the workspace packages. `--symlink-install` means Python edits take effect without rebuilding |
 | `colcon build --symlink-install --packages-select swarm_nodes` | Rebuild one package — faster while iterating |
-| `ros2 pkg executables swarm_nodes` | List runnable nodes. **The check that catches a broken `setup.py`** — expect 10 |
+| `ros2 pkg executables swarm_nodes` | List runnable nodes. **The check that catches a broken `setup.py`** |
 | `rm -rf build install log && colcon build --symlink-install` | Nuclear rebuild when the build state looks wrong |
 
 ### ArduPilot SITL (one-time, in the container)
@@ -33,7 +33,7 @@ Every command used to build, simulate, fly and debug this stack, with what each 
 | Command | Purpose |
 | --- | --- |
 | `pip3 install --user "empy==3.3.4"` | Build dependency. 4.x breaks ArduPilot |
-| `cd ~/ardupilot && ./waf configure --board sitl` | Configure for simulation |
+| `cd "${ARDUPILOT_DIR:-../ardupilot}" && ./waf configure --board sitl` | Configure for simulation |
 | `./waf copter` | Build `arducopter` |
 | `./waf distclean` | **Wipe the build tree.** Required when switching between host and container — mixing their object files gives `undefined reference to __isoc23_strtoul` |
 | `./build/sitl/bin/arducopter --help` | Confirm the binary runs here. `GLIBC not found` means it was built for the other environment |
@@ -43,24 +43,19 @@ Every command used to build, simulate, fly and debug this stack, with what each 
 
 ## Simulation
 
-Start **Gazebo first** — SITL sends to UDP 9002 and needs something listening.
+Use the [runbook](GAZEBO_RUNBOOK.md#procedure) for the ordered launch commands and the expected readiness checks.
 
 | Command | Purpose |
 | --- | --- |
-| `gz sim -v4 -r <world>.sdf` | Start Gazebo with a world. `-r` runs immediately (otherwise press ▶) |
-| `gz sim -s -v4 -r <world>.sdf` | Headless — physics only, no window. Use if the GUI misbehaves under Wayland |
-| `$(ros2 pkg prefix swarm_bringup)/share/swarm_bringup/gazebo/worlds/x500_swarm.sdf` | Four X500s, 3 m apart, FDM ports 9002/9012/9022/9032 |
-| `.../worlds/x500_single.sdf` | One X500 — use this first |
-| `src/swarm_bringup/gazebo/tools/gen_x500_world.py --count 4 --spacing 3` | Regenerate a world. Edit this, not the generated `.sdf` |
+| `./tools/sim_gazebo.sh` | Launch the installed four-drone world with its model and plugin paths |
+| `./tools/sim_gazebo.sh --headless` | Run Gazebo without the GUI |
+| `./tools/sim_gazebo.sh --single` | Start the single-drone world for a one-instance smoke test |
+| `ros2 pkg prefix --share swarm_bringup` | Locate installed simulation assets |
+| `src/swarm_bringup/gazebo/tools/gen_x500_world.py --count 4 --spacing 3` | Regenerate the four-drone world |
+| `ros2 launch swarm_formation formation.launch.py use_sim_time:=true record:=false` | Open the formation panel and start controllers with Gazebo time |
+| `ros2 bag play rosbags/rosbag_11_nov_2026_mochilartk_3 --topics /mochila_rtk/odom` | Supply the backpack trajectory during the formation experiment |
 
-### SITL
-
-```bash
-cd ~/ardupilot
-./Tools/autotest/sim_vehicle.py -v ArduCopter -f gazebo-iris --model JSON \
-    --count 4 --auto-sysid -L CMAC --no-mavproxy \
-    --add-param-file=$(ros2 pkg prefix swarm_bringup)/share/swarm_bringup/config/x500_v2.parm
-```
+### SITL launch flags
 
 | Flag | Purpose |
 | --- | --- |
@@ -107,7 +102,7 @@ cd ~/ardupilot
 
 | Command | Purpose |
 | --- | --- |
-| `ros2 run swarm_nodes stream_setup` | Ask each drone for MAVLink messages 30/31/32/33 at 25 Hz, and re-ask on reconnect. Started by the launch files |
+| `ros2 run swarm_nodes stream_setup` | Request MAVLink messages 24/30/31/32/33 and reapply on reconnect. The SITL launch starts this node at 25 Hz |
 | `ros2 run swarm_nodes odom_relay` | **Publish `/droneN/odom` in the shared `swarm_origin` frame.** Drones must be stationary while offsets resolve |
 | `ros2 run swarm_nodes command_bridge` | **The safety layer.** Clamps every `/droneN/cmd_vel` and watchdogs the stream. Nothing reaches a drone without it |
 | `ros2 run swarm_nodes first_flight --ros-args -p confirm:=true -p namespaces:="['drone1']"` | GUIDED → arm → takeoff → hand over → land. **Ctrl-C lands.** Won't arm without `confirm:=true` |
